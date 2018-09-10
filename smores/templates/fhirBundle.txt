@@ -1,0 +1,10 @@
+{
+    "resourceType": "Bundle",
+    {% if date %} "meta": {{ date }}, {%- endif %}
+    {% if total %} "total": {{ total_count }},  {%- endif %}
+    "entry": [
+        {% for resource in entry %}
+        { "resource":  {{ resource }} }{{ "," if not loop.last }}
+        {%- endfor %}
+    ]
+}

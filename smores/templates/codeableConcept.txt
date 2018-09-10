@@ -1,0 +1,7 @@
+"coding": [{% for codeset in coding %}
+        {
+            "system": {{ codeset.system }} ,
+            "code": {{ codeset.code }} ,
+            "display": {{codeset.display}}
+        }{{ "," if not loop.last }}
+{%- endfor %}]

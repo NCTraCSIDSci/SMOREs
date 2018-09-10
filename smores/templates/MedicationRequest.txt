@@ -1,0 +1,18 @@
+{% block entry %}
+{
+    "resourceType": "Medication",
+    "id": "{{ med.med_id }}"
+    {%- if med.coding %},
+    "code": {
+        {{ med.coding }}
+    }{% endif %}{% if med.ingredient %},
+    "ingredient": [{ {% for ingredient in med.ingredient -%}
+            {% if ingredient.itemReference %}"itemReference": {
+                "reference": "{{ med.ingredient.reference }}"
+            }{% if med.ingredient %},{% endif %}{% endif %}
+            {% if ingredient.itemCodeableConcept %}"itemCodeableConcept": {
+                {{ ingredient.itemCodeableConcept }}
+            }{% endif %}
+    {% endfor %} }]{% endif %}
+}
+{% endblock %}
