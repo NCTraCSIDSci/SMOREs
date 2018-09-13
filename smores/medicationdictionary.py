@@ -1,11 +1,11 @@
 import logging
 smoresLog = logging.getLogger(__name__)
-
+src_list = {}
 
 def get_med_dict_by_src(src):
     """ Returns a MedicationDictionary with a Source = @src - Always returns MASTER"""
     med_dict_list = MedicationDictionary.src_list
-    smoresLog.debug(med_dict_list)
+    smoresLog.debug('Source Requested: {0} , Current List: {1}'.format(src, med_dict_list))
     if src not in med_dict_list.keys():
         _md = MedicationDictionary(src)
     else:
@@ -19,14 +19,18 @@ def get_available_med_dict():
 def get_obj_by_src(obj_id, src):
     return get_med_dict_by_src(src).get_med_by_id(obj_id)
 
+def get_src_list():
+    global src_list
+    return src_list
+
 class MedicationDictionary:
     """ Constructs a Dictionary for Various Medication Types.
     Can include pointers to either Medication.class or RxCUI.class Objects
     Will only contain pointers of a single object type"""
 
-    src_list = {}
+    src_list = get_src_list()
 
-    def __init__(self, dict_src='', dict_id=None):
+    def __init__(self,  dict_src='', dict_id=None, link=None):
         if dict_src != '':
             self.source = dict_src
             if dict_id is not None:
@@ -34,6 +38,11 @@ class MedicationDictionary:
             else:
                 MedicationDictionary.src_list[dict_src] = {'MASTER': self}
                 smoresLog.debug(MedicationDictionary.src_list)
+        if link is not None:
+            self.link = link
+            MedicationDictionary.src_list[dict_src]['LINK'] = link
+        else:
+            self.link = None
         self.local_ids_avail = False
         self.rxcui_avail = False
         self.rxcui_status_avail = False

@@ -14,17 +14,19 @@ def get_med_master_dict(src):
 
 
 def get_med_by_id(med_id, src):
-    master_dict = get_med_master_dict(src)
-    return master_dict.get_med_by_id(med_id)
+    if type(src) is md.MedicationDictionary:
+        master_dict = get_med_master_dict(src)
+        med = master_dict.get_med_by_id(med_id)
+    else:
+        med = Medication.med_id_list[src][med_id]
+    return med
 
 
 def med_exists(med_id, src):
     if type(src) is md.MedicationDictionary:
         return src.check_list_by_id(med_id)
     else:
-        master_dict = get_med_master_dict(src)
-        smoresLog.debug('Master Dict: {0}'.format(master_dict))
-        return master_dict.check_list_by_id(med_id)
+        return True if med_id in Medication.med_id_list[src].keys() else False
 
 
 def get_json_keys(json_type):
@@ -34,14 +36,15 @@ def get_json_keys(json_type):
 
 class Medication:
     id_count = itertools.count()
+    med_id_list = {}
 
-    def __init__(self, source, input_key=None, is_rxcui=False, name=''):
+    def __init__(self, source=None, input_key=None, is_rxcui=False, name=''):
         smoresLog.debug('Adding medication')
         self.sys_id = int(next(Medication.id_count))
         self.name = name
         self.source = source
         self.id_links = {}
-        self.parent_med_dict = md.get_med_dict_by_src(self.source)
+        # self.parent_med_dict = md.get_med_dict_by_src(self.source)
         self.local_id = input_key if input_key is not None else self.sys_id
         self.dictionaries = {}
         self.has_rxcui = False
@@ -49,7 +52,9 @@ class Medication:
         self.json = None
         if input_key is not None:
             self.add_cui(self, source)
-        self.parent_med_dict.add_med_with_id(self, self.local_id)
+        # self.parent_med_dict.add_med_with_id(self, self.local_id)
+
+        Medication.med_id_list[source][self.local_id] = self
 
     def add_cui(self, in_cui, cui_type):
         cui_dict = self.get_dict(cui_type)

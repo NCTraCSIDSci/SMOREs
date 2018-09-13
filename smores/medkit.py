@@ -8,7 +8,7 @@ import csv
 from pathlib import Path
 from multiprocessing import Process, Manager, cpu_count, Queue, Value
 import queue
-from multiprocessing.pool import ThreadPool as Pool
+from multiprocessing.pool import Pool
 from threading import Thread, activeCount
 import time
 import itertools
@@ -20,6 +20,7 @@ import ntpath
 from tqdm import tqdm, trange
 
 smoresLog = logging.getLogger(__name__)
+
 
 def show_prog(q, total, unit):
     prog = tqdm(total=total, desc="Progress", unit=unit)
@@ -33,9 +34,25 @@ def show_prog(q, total, unit):
         except:
             continue
 
-def process_line(medkit, work_q, prog_q, curr_thd, results, delim=','):
+
+def add_meds(q, src):
+    med_dict = md.get_med_dict_by_src(src)
+    while True:
+        try:
+            item = q.get()
+            if item == 'KILL_PROC' and item is not None:
+                break
+            else:
+                item = q.get()
+                med_dict.add_med_with_id(item[0], item[1])
+        except:
+            continue
+
+
+def process_line(medkit, work_q, prog_q, curr_thd, track_q, out_q, id=0, delim=','):
+    smoresLog = logging.getLogger(__name__ + '.' + str(id))
     head = medkit.headers
-    md = medkit.m_dict
+    md = medkit.file_name
     i_local_key = head['LOCAL_ID']
     i_code_key = head['CODE']
     i_code_type_key = head['CODE_TYPE']
@@ -51,15 +68,16 @@ def process_line(medkit, work_q, prog_q, curr_thd, results, delim=','):
             smoresLog.debug("Current IDs in Threads: {0}".format(curr_thd))
             local_id = line[i_local_key]
             # Need to prevent multi processing of the same Local Id Across threads
-            if local_id not in curr_thd:
+            if local_id not in curr_thd and local_id != i_last:
                 curr_thd.append(local_id)
-                if m.med_exists(local_id, medkit):
-                    print('Dup')
-                    temp_med = m.get_med_by_id(local_id, medkit)
+                if m.med_exists(local_id, md):
+                    # print('Dup')
+                    temp_med = m.get_med_by_id(local_id, md)
                     trackers['dups'] += 1
                 else:
-                    temp_med = m.Medication(medkit, local_id)
+                    temp_med = m.Medication(md, local_id)
                     trackers['records'] += 1
+                    i_last = local_id
 
                 if len(line[i_code_key]) != 0:
                     if line[i_code_type_key].upper() in ['RXCUI', 'RXNORM']:
@@ -86,16 +104,18 @@ def process_line(medkit, work_q, prog_q, curr_thd, results, delim=','):
                     smoresLog.debug('Name Check')
                     temp_med.set_name(line[i_name_key])
                 prog_q.put(1)
+                out_q.put([temp_med, local_id])
                 work_q.task_done()
                 curr_thd.remove(local_id)
             else:
-                smoresLog.info('Stacked Rows Found, re-queue {0}'.format(item))
+                smoresLog.warning('Stacked Rows Found, re-queue {0}'.format(item))
                 work_q.task_done()
                 work_q.put(item)
         else:
             break
-    results.put(trackers)
+    track_q.put(trackers)
     return
+
 
 def load_file(input_file):
 
@@ -106,14 +126,17 @@ def load_file(input_file):
         work_q = manager.Queue()
         current = manager.list()
         results = manager.Queue()
-
+        dict_q = manager.Queue()
 
         pool = []
         with open(medkit.path, 'r') as file_handle:
             progress = Process(target=show_prog, args=(prog_q, _num_lines, ' Rows'))
             progress.start()
+            med_process = Process(target=add_meds, args=(dict_q, medkit.file_name))
+            med_process.start()
+
             for i in range(workers):
-                _p = Thread(target=process_line, args=(medkit, work_q, prog_q, current, results))
+                _p = Thread(target=process_line, args=(medkit, work_q, prog_q, current, results, dict_q, i))
                 _p.start()
                 pool.append(_p)
                 # time.sleep(.02)
@@ -136,7 +159,7 @@ def load_file(input_file):
                 c_dup += _r['dups']
                 errors += _r['errors']
 
-        return pool, {'records': c_records, 'dups': c_dup, 'errors': errors}
+            return pool, {'records': c_records, 'dups': c_dup, 'errors': errors}
 
 
     if ':\\' in input_file:
@@ -148,7 +171,7 @@ def load_file(input_file):
 
     try:
         medkit = MedKit(input_file_path)
-        _num_workers = math.ceil(cpu_count() / 2)
+        _num_workers = math.ceil(cpu_count())
         pool, counters = process_file(medkit, _num_workers)
         medkit.set_record_count(counters['records'])
         print('Counters: {0}'.format(counters))
@@ -455,9 +478,11 @@ class MedKit:
         self.records = {}
         self.headers = self.get_headers(file_delim)
         self.trackers = {}
-        self.m_dict = md.MedicationDictionary(self)
+        self.m_dict = md.MedicationDictionary(self.file_name, link=self)
         MedKit.med_kits[self.path] = self
         self.prog_q = None
+
+        m.Medication.med_id_list[self.file_name] = {}
 
     def get_filename(self, path):
         if type(path) is Path:
