@@ -2,14 +2,22 @@ from logging.handlers import RotatingFileHandler
 import multiprocessing, threading, logging, sys, traceback
 import os
 
+handler_list = []
 
 class MultiProcessingLog(logging.Handler):
-    def __init__(self, name, mode, maxsize, rotate):
-        logging.Handler.__init__(self)
 
-        self._handler = RotatingFileHandler(name, mode, maxsize, rotate)
+    def __init__(self, name, mode, maxsize=0, backup=1):
+        global handler_list
+        logging.Handler.__init__(self)
+        self._handler = RotatingFileHandler(name, mode, maxBytes=maxsize, backupCount=backup, encoding='UTF-8')
         self.queue = multiprocessing.Queue(-1)
-        # self._handler.doRollover()
+        if self.name not in handler_list:
+            handler_list.append(name)
+            try:
+                self._handler.doRollover()
+            except (PermissionError, ValueError):
+                pass
+
         t = threading.Thread(target=self.receive)
         t.daemon = True
         t.start()

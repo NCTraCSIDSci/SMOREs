@@ -5,16 +5,11 @@ import timeit
 from configparser import ConfigParser
 import smores.medkit as smores
 from smores.errors import smores_error
+import yaml
+from pathlib import Path
+import sys
 
 smoresLog = logging.getLogger(__name__)
-
-
-def load_environment():
-    logging.debug('Parsing config.ini and environmental variables')
-    config = ConfigParser()
-    config.read('config.ini')
-
-    config['main']['input_file'] = os.getenv('input_file', config['main'].get('input_file'))
 
 class smoresCLI(cmd.Cmd):
     _OPTIONS_RXNSTATUS = ['LOCAL', 'RXCUI', 'NDC', 'SNOMED']
@@ -323,7 +318,7 @@ Syntax: load [file_name]
             self.do_fhir('', test=True)
         elif arg == 'ld':
             smoresLog.info('Running Load Test...')
-            self.do_load('testFile2.csv')
+            self.do_load('unc_rxnorm_epic_small.csv')
 
     def emptyline(self):
         """Do nothing on an empty input line"""
