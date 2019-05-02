@@ -544,7 +544,7 @@ class RXNDC(SMORESapi):
             return False
 
 class openFDADevice(openFDA):
-    def __init__(self, delay=300, api_key=None):
+    def __init__(self, api_key=None):
         super(openFDA, self).__init__()
         # https://api.fda.gov/device/udi.json?search=identifiers.id:%2266004-6028-1%22
         self.api_url = 'https://api.fda.gov/device/'
@@ -555,7 +555,7 @@ class openFDADevice(openFDA):
                 'payload': {'search': 'identifiers.id:"*CODE*"'}
             }
         }
-
+        self.def_wait = 1500 if self.api_key is None else 250
         if self.api_key is not None:
             for endpoint in self.endpoints.values():
                 if 'api_key' not in endpoint['payload'].keys():
