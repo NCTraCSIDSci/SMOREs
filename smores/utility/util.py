@@ -101,7 +101,7 @@ def get_api_key(API:str):
 
     conf = read_config_value('API_KEY')
     key = conf[config_keys[API].lower()]
-    validated_key = key if key.upper() != 'NONE' and key.length() > 1 else None
+    validated_key = key if key.upper() != 'NONE' and len(key) > 1 else None
     return validated_key
 
 
