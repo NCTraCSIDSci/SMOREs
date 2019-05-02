@@ -93,6 +93,18 @@ def get_version():
     return smoresCLI.client_version
 
 
+def get_api_key(API:str):
+    config_keys = {
+        'FDA': 'FDA_API_KEY',
+        'UMLS': 'UMLS_API_KEY'
+    }
+
+    conf = read_config_value('API_KEY')
+    key = conf[config_keys[API].lower()]
+    validated_key = key if key.upper() != 'NONE' and key.length() > 1 else None
+    return validated_key
+
+
 def read_config_value(setting):
     import configparser as cf
     config_path = get_util_base('config').joinpath('config.ini')
@@ -104,6 +116,8 @@ def read_config_value(setting):
             index = 'INPUT_FILE'
         elif setting == 'OUTPUT_CONF':
             index = 'OUTPUT_FILE'
+        elif setting == 'API_KEY':
+            index = 'API_CONFIG'
         return {item.lower(): value for item, value in config[index].items()}
     except KeyError:
         smores_error('TBD')

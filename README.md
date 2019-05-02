@@ -1,6 +1,6 @@
 # Synergistic Medication Organizer for RxNorm and Extras (SMOREs)
 
-SMOREs is a python applicationd esigned to assist institutions with mappings local medications to standardized ontologies. Any local information around a medication can be loaded in and SMOREs will attempt to link the provided information to desired ontologies. These links are achieved through the use of available public API's provided by the National Library of Medicine and the Food and Drug Administration.
+SMOREs is a python application designed to assist institutions with mappings local medications to standardized ontologies. Any local information around a medication can be loaded in and SMOREs will attempt to link the provided information to desired ontologies. These links are achieved through the use of available public API's provided by the National Library of Medicine and the Food and Drug Administration.
 
 ## Getting Started
 
@@ -52,7 +52,7 @@ For more information on available commands, processes and functionality please v
 
 ## Contributing
 
-Please read [CONTRIBUTING.md](https://gist.github.com/PurpleBooth/b24679402957c63ec426) for details on our code of conduct, and the process for submitting pull requests to us.
+Please contact the development team about making contributions to the source. More detail on contributing to the source will be provided in the future.
 
 ## Versioning
 

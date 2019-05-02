@@ -101,6 +101,7 @@ class openFDA(SMORESapi):
     requests_cache.install_cache(str(SMORESapi.cache_base.joinpath('openfda_cache').absolute()),
                                      backend='sqlite',
                                      expire_after=SMORESapi.expire_after)
+
     def __init__(self, delay=300, api_key=None):
         super(openFDA, self).__init__()
 
@@ -110,7 +111,7 @@ class openFDA(SMORESapi):
         self.api_short = 'openFDA API'
         self.cache = None
         self.e_subclass = 'x002'
-        self.api_key = api_key
+        self.api_key = api_key if api_key != 'NONE' and api_key is not None else None
         self.endpoints = {
             'PACK_STATUS': {
                 'base': 'ndc.json',
@@ -129,6 +130,7 @@ class openFDA(SMORESapi):
             for endpoint in self.endpoints.values():
                 if 'api_key' not in endpoint['payload'].keys():
                     endpoint['payload']['api_key'] = self.api_key
+
     def get_ndc_base(self, ndc):
         """
         Returns base information on a provided NDC code from the openFDA API
@@ -546,12 +548,18 @@ class openFDADevice(openFDA):
         super(openFDA, self).__init__()
         # https://api.fda.gov/device/udi.json?search=identifiers.id:%2266004-6028-1%22
         self.api_url = 'https://api.fda.gov/device/'
+        self.api_key = api_key if api_key.upper() != 'NONE' and api_key is not None else None
         self.endpoints = {
             'VALID': {
                 'base': 'udi.json',
                 'payload': {'search': 'identifiers.id:"*CODE*"'}
             }
         }
+
+        if self.api_key is not None:
+            for endpoint in self.endpoints.values():
+                if 'api_key' not in endpoint['payload'].keys():
+                    endpoint['payload']['api_key'] = self.api_key
 
     def get_ndc_base(self, ndc):
         """

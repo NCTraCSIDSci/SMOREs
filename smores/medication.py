@@ -457,9 +457,9 @@ class LocalMed(Medication):
 
 
 class NDC(Medication):
-    api = openFDA(api_key='54w6laretbHkev5jLezJ45rEYepP8OOLjtyL0xTG')
+    api = openFDA(api_key=util.get_api_key('FDA'))
     api2 = RXNDC()
-    api3 = openFDADevice(api_key='54w6laretbHkev5jLezJ45rEYepP8OOLjtyL0xTG')
+    api3 = openFDADevice(api_key=util.get_api_key('FDA'))
 
     def __init__(self, input_key:str, valid=None):
         super(NDC, self).__init__(input_key)
