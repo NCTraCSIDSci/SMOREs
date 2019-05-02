@@ -1,10 +1,6 @@
-import cmd
-import os
 import logging
-import timeit
-from configparser import ConfigParser
 import smores.medkit as medkit
-from smores.errors import smores_error
+
 failures = []
 def rxnorm_ingredient(rxcui, expect):
     _return_check=False

@@ -1,0 +1,56 @@
+---
+version: 1
+disable_existing_loggers: False
+formatters:
+    simple:
+        format: "[%(name)s.%(funcName)s][%(levelname)s] -- %(message)s"
+handlers:
+    console:
+        class: logging.StreamHandler
+        level: CRITICAL
+        formatter: simple
+        stream: ext://sys.stdout
+    main:
+        class: smores.smoreslog.MultiProcessingLog
+        level: DEBUG
+        formatter: simple
+        name: ../smores/logs/main.log
+        mode: a
+        maxsize: 0
+        backup: 1
+    smoresHandle:
+        class: smores.smoreslog.MultiProcessingLog
+        level: DEBUG
+        formatter: simple
+        name: ../smores/logs/smores.log
+        mode: a
+        maxsize: 0
+        backup: 1
+    rxnormHandle:
+        class: smores.smoreslog.MultiProcessingLog
+        level: DEBUG
+        formatter: simple
+        name: ../smores/logs/rxnorm.log
+        mode: a
+        maxsize: 0
+        backup: 1
+    errorsHandle:
+        class: smores.smoreslog.MultiProcessingLog
+        level: ERROR
+        formatter: simple
+        name: ../smores/logs/errors.log
+        mode: a
+        maxsize: 0
+        backup: 1
+loggers:
+    smores:
+        level: DEBUG
+        handlers: [smoresHandle, errorsHandle, main, console]
+        propagate: False
+    rxnorm:
+        level: DEBUG
+        handlers: [rxnormHandle, errorsHandle, main, console]
+        propagate: False
+root:
+    level: INFO
+    handlers: [console, main]

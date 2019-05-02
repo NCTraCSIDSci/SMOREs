@@ -2,7 +2,6 @@
 
 import os
 import sys
-import logging
 import logging.config
 import logging.handlers
 from pathlib import Path
@@ -18,6 +17,7 @@ if __name__ == "__main__":
         _prj = Path.cwd().parents[0]
         sys.path.append(os.path.join(str(_prj), '..'))
         _config = _prj.joinpath('smores','config')
+        cache_base = _prj.joinpath('smores', 'cache')
         _logconfig = _config.joinpath('logging.yaml')
         _metapath = _config.joinpath('_metadata.py')
         _meta = {}
@@ -29,6 +29,7 @@ if __name__ == "__main__":
         try:
             with _metapath.open() as _metafile:
                 exec(_metafile.read(), globals(), _meta)
+                __version__ = _meta['version']
         except EnvironmentError:
             raise RuntimeError("if %s.py exists, it is required to be well-formed" % (_metapath,))
         else:

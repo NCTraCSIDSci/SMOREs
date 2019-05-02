@@ -1,43 +1,80 @@
+# Python Lib Modules
 import logging
-smoresLog = logging.getLogger(__name__)
-src_list = {}
+# Community Modules
+from tqdm import tqdm, trange
+# SMOREs Internal Imports
+from smores.medkit import MedKit
 
-def get_med_dict_by_src(src):
+smoresLog = logging.getLogger(__name__)
+
+
+def get_med_dict_by_src(src, child=None):
     """ Returns a MedicationDictionary with a Source = @src - Always returns MASTER"""
     med_dict_list = MedicationDictionary.src_list
-    smoresLog.debug('Source Requested: {0} , Current List: {1}'.format(src, med_dict_list))
     if src not in med_dict_list.keys():
         _md = MedicationDictionary(src)
     else:
-        _md = med_dict_list[src]['MASTER']
+        if child is not None and child in med_dict_list[src].keys():
+            _md = med_dict_list[src][child]
+        elif child is None:
+            _md = med_dict_list[src]['MASTER']
+        else:
+            _md = None
     return _md
 
 
 def get_available_med_dict():
     return MedicationDictionary.src_list
 
+
 def get_obj_by_src(obj_id, src):
     return get_med_dict_by_src(src).get_med_by_id(obj_id)
 
-def get_src_list():
-    global src_list
-    return src_list
 
 class MedicationDictionary:
     """ Constructs a Dictionary for Various Medication Types.
     Can include pointers to either Medication.class or RxCUI.class Objects
     Will only contain pointers of a single object type"""
+    src_list = {}
 
-    src_list = get_src_list()
+    @staticmethod
+    def get_src_list():
+        return MedicationDictionary.src_list
+
+    @staticmethod
+    def load_session(meddicts:dict):
+        _e = []
+        md_list = MedicationDictionary.get_src_list()
+        for dic, obj in md_list.items():
+            for med in obj.med_list:
+                med.remove()
+            md_list[dic] = None
+            del obj
+            MedicationDictionary.src_list.pop(dic)
+        MedicationDictionary.src_list = {}
+        for src, obj in meddicts.items():
+            if isinstance(obj, dict):
+                _inner = {}
+                for dic, md_o in obj.items():
+                    if isinstance(md_o, MedicationDictionary):
+                        _inner[dic] = md_o
+                    elif dic == 'LINK' and isinstance(md_o, MedKit):
+                        _inner[dic] = md_o
+                    else:
+                        _e.append(dic)
+                MedicationDictionary.src_list[src] = _inner
+            else:
+                _e.append(src)
+        return _e
 
     def __init__(self,  dict_src='', dict_id=None, link=None):
         if dict_src != '':
             self.source = dict_src
+            if self.source not in MedicationDictionary.src_list.keys():
+                MedicationDictionary.src_list[self.source] = {'MASTER': self if dict_id is None else MedicationDictionary(self.source)}
             if dict_id is not None:
                 MedicationDictionary.src_list[dict_src][dict_id] = self
-            else:
-                MedicationDictionary.src_list[dict_src] = {'MASTER': self}
-                smoresLog.debug(MedicationDictionary.src_list)
+
         if link is not None:
             self.link = link
             MedicationDictionary.src_list[dict_src]['LINK'] = link
@@ -49,6 +86,7 @@ class MedicationDictionary:
         self.ing_avail = False
         self.rxcui_matches_avail = False
         self.ndc_avail = False
+        self.remap_checked = False
         self.primary_key = ''
         # Object that contains the med id's as Keys and pointers to their medication object
         self.med_list = {}
@@ -60,12 +98,11 @@ class MedicationDictionary:
             @id_check : The desired id of the Medication object to check.
                     This parameter depends on what ID (RXCUI, NDC, LOCAL) is the basis of the MedicationDictionary to
                     prevent duplicate entries"""
-        smoresLog.debug("Performing ID Check... " + str(id_check))
-        smoresLog.debug(id_check)
         if type(id_check) is not str:
             id_check = str(id_check)
-        if not self.check_list_by_id(id_check):
-            smoresLog.debug("Medication not found, adding to dictionary")
+        smoresLog.debug("Performing ID Check... " + id_check)
+        if id_check not in self.med_list.keys():
+            smoresLog.debug("Medication not found, adding to dictionary {0}".format(self))
             self.med_list[id_check] = in_med
             return True
         else:
@@ -76,7 +113,8 @@ class MedicationDictionary:
         self.description = in_desc
 
     def check_list_by_id(self, med_id):
-        if med_id not in self.med_list:
+        smoresLog.debug("Performing ID Check... " + str(med_id))
+        if str(med_id) not in self.med_list:
             return False
         else:
             return True
@@ -97,6 +135,9 @@ class MedicationDictionary:
             self.ndc_avail = True
         else:
             self.primary_key = 'SYS'
+
+    def get_med_list(self):
+        return self.med_list
 
     def get_med_by_id(self, med_id):
         return self.med_list[med_id]
@@ -158,13 +199,24 @@ class MedicationDictionary:
 
         return return_headers
 
-    def get_med_list(self, modifier=None):
+    def get_med_list(self, modifier:dict=None, inc_obj=False):
         if modifier is not None:
             mod_list = []
             for prop, value in modifier.items():
-                for cui, med in self.med_list.items:
+                for cui, med in self.med_list.items():
                     if med.get_property(prop) == value:
-                        mod_list.append(cui)
+                            mod_list.append({cui, med}) if inc_obj else mod_list.append(cui)
             return mod_list
         else:
-            return list(self.med_list.keys())
+            return self.med_list if inc_obj else list(self.med_list.keys())
+
+    def check_remap(self, source='RXNORM'):
+        remap_count = 0
+        if not self.remap_checked:
+            for med in tqdm(self.med_list.values(), total=self.get_med_count(), unit=' Medications'):
+                _remap = med.get_cui_remaps(source)
+                if _remap:
+                    remap_count += 1
+            self.remap_check = True
+        return self.remap_check, remap_count
+

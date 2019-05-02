@@ -10,32 +10,24 @@ handlers:
         level: CRITICAL
         formatter: simple
         stream: ext://sys.stdout
-    main:
-        class: smores.smoreslog.MultiProcessingLog
-        level: DEBUG
-        formatter: simple
-        name: ../smores/logs/main.log
-        mode: a
-        maxsize: 0
-        backup: 1
     smoresHandle:
-        class: smores.smoreslog.MultiProcessingLog
-        level: DEBUG
+        class: smores.utility.smoreslog.SmoresFileLog
+        level: WARN
         formatter: simple
         name: ../smores/logs/smores.log
         mode: a
         maxsize: 0
         backup: 1
-    rxnormHandle:
-        class: smores.smoreslog.MultiProcessingLog
-        level: DEBUG
+    APIHandle:
+        class: smores.utility.smoreslog.SmoresFileLog
+        level: INFO
         formatter: simple
-        name: ../smores/logs/rxnorm.log
+        name: ../smores/logs/API.log
         mode: a
         maxsize: 0
         backup: 1
     errorsHandle:
-        class: smores.smoreslog.MultiProcessingLog
+        class: smores.utility.smoreslog.SmoresFileLog
         level: ERROR
         formatter: simple
         name: ../smores/logs/errors.log
@@ -43,14 +35,26 @@ handlers:
         maxsize: 0
         backup: 1
 loggers:
-    smores:
+    smores.processes:
         level: DEBUG
-        handlers: [smoresHandle, errorsHandle, main, console]
+        handlers: [smoresHandle, errorsHandle, console]
         propagate: False
-    rxnorm:
+    smores.medication:
         level: DEBUG
-        handlers: [rxnormHandle, errorsHandle, main, console]
+        handlers: [smoresHandle, errorsHandle, console]
+        propagate: False
+    smores.medicationdictionary:
+        level: DEBUG
+        handlers: [smoresHandle, errorsHandle, console]
+        propagate: False
+    smores.medkit:
+        level: DEBUG
+        handlers: [smoresHandle, errorsHandle, console]
+        propagate: False
+    smores.api:
+        level: DEBUG
+        handlers: [APIHandle, errorsHandle, console]
         propagate: False
 root:
     level: INFO
-    handlers: [console, main]
+    handlers: [console]

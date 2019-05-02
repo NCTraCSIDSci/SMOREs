@@ -1,9 +1,11 @@
 name="Synergistic Medication Organizer for RxNorm and Extras"
-version="0.4.2"
+version="0.10.1"
 author="Robert Bradford"
 author_email="rbrad@med.unc.edu"
-description="SMORES - Synergistic Medication Organizer for RxNorm and Extras : " \
-            "A program designed to simplify the validation of institutional RxNorm code mappings"
+description="SMOREs - Synergistic Medication Organizer for RxNorm and Extras : " \
+            "A program designed to simplify the validation of institutional RxNorm code mappings and consolidate " \
+            "medication information into single entities"
+fhir=["STU3", "STU4"]
 long_description="ReadMe.md"
 long_description_content_type="text/markdown"
 url=""
