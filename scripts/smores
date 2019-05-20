@@ -24,7 +24,7 @@ if __name__ == "__main__":
         _meta = {}
         if _logconfig.exists():
             with open(_logconfig, 'rt') as f:
-                config = yaml.load(f.read(), Loader=yaml.FullLoader)
+                config = yaml.load(f.read(), Loader=yaml.SafeLoader)
             logging.config.dictConfig(config)
 
         try:
