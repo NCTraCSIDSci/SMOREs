@@ -382,7 +382,7 @@ Syntax: load [file_name]
         print('Preparing Workflow Wizard...')
         _file = input('Please provide a file name:')
 
-
+        #TODO flesh out full workflow definition process
         print('Available Commands for WorkFlow')
         for i, _o in enumerate(options):
             print('{0}) {1}'.format(i, _o))
@@ -466,6 +466,7 @@ Syntax: load [file_name]
             cmd_call(file, out_file=output_file, params=csv_constructor)
         else:
             print('Error in preparing CSV')
+
     def do_save(self, arg):
         """Save the current session for use later on. All existing imports and results from commands will be saved.
         Cached queries to API's will not be saved as these results should be rebuilt every 48 hours due to code set fluctuations."""
@@ -480,85 +481,6 @@ Syntax: load [file_name]
                 _e = self.errors[error_code]
                 print('Errors Encountered for "{0}" : \n{1}\n\n'.format(error_code, _e))
 
-    def do_test(self, arg):
-        testFile = 'testFile2.csv'
-        if arg == 'ing1':
-            smoresLog.info('Running Ingredients Test 1...')
-            smoresLog.info('1) Loading testFile.csv')
-            self.do_load(testFile)
-            smoresLog.info('2) Getting All Ingredients')
-            self.do_rxn_ingredients('')
-        elif arg == 'ing2':
-            smoresLog.info('Running Ingredients Test 2...')
-            smoresLog.info('1) Loading testFile.csv')
-            self.do_load(testFile)
-            smoresLog.info('2) Getting Ingredients Of Local Med: 1234')
-            self.do_rxn_ingredients('1234 LOCAL')
-        elif arg == 'ing3':
-            smoresLog.info('Running Ingredients Test 3...')
-            smoresLog.info('Testing RxNav Individual Call')
-            # 353605, CHLORPHENIRAMINE-PHENYLEPHRINE-DM 4 MG-10 MG-12.5MG/5 ML ORAL LIQUID
-            self.do_rxn_ingredients('8164 RXCUI')
-        elif arg == 'status':
-            self.do_load(testFile)
-            self.do_rxn_status('')
-
-        elif arg == 'fhir':
-            smoresLog.info('Running FHIR Output Test...')
-            self.do_load('CDWH.csv')
-            # self.do_fhir('', test=True)
-            smores.run_rxn_history('ALL', '')
-            smores.run_rxn_ingredients()
-            smores.run_med_to_json(file='OPIOID_TS_MED_DICT.csv')
-
-        elif arg == 'ld':
-            smoresLog.info('Running Load Test...')
-            self.do_load(testFile)
-
-        elif arg == 'csv':
-            smoresLog.info('Running Load Test...')
-            self.do_load(testFile)
-            success, errors = smores.run_rxn_status('testFile2.csv')
-
-        elif arg == 'remap':
-            smoresLog.info('Running Load Test...')
-            self.do_load(testFile)
-            smores.run_remap('ALL', '')
-            smores.run_rxn_ingredients()
-
-        elif arg == 'unc':
-            _file = 'CDWH_Q2_2019_for_SMOREs.csv'
-            # self.do_load('unc_rxnorm_epic_small.csv')
-            self.do_load(_file)
-            # self.do_save('')
-            # smores.run_client_cmd(client_cmd='rxn_lookup', file=_file)
-            self.do_save('')
-            smores.run_client_cmd(client_cmd='rxn_remap', file=_file)
-            self.do_save('')
-            smores.run_client_cmd(client_cmd='rxn_history', file=_file)
-            self.do_save('')
-            smores.run_client_cmd(client_cmd='rxn_ing', file=_file)
-            self.do_save('')
-            smores.run_med_to_csv(_file, params={})
-            smores.run_dict_to_csv('RXNORM', params={})
-            #
-            # _file = 'claims_ndc.csv'
-            # # self.do_load('unc_rxnorm_epic_small.csv')
-            # self.do_load(_file)
-            # smores.run_rxn_lookup(file=_file)
-            # smores.run_rxn_ingredients(file=_file)
-            # smores.run_med_to_json(file=_file)
-
-        elif arg == 'hist':
-            _file = 'unc_rxnorm_epic_small.csv'
-            self.do_load(_file)
-            self.do_cui_history('')
-            # success, errors = smores.run_rxn_ingredients()
-            # if success:
-            #     print('Successfully completed ingredient search')
-            #     self.set_touched('All', 'rxn_ingredients')
-            # smores.run_med_to_csv(['All',''], None)
-            # smores.run_med_to_csv(['All', ''], None, 'RXNORM')
     def emptyline(self):
         """Do nothing on an empty input line"""
         pass
