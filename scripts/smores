@@ -15,15 +15,16 @@ if __name__ == "__main__":
         raise RuntimeError("This program requires the Python 3 interpreter")
     else:
         _prj = Path.cwd().parents[0]
-        sys.path.append(os.path.join(str(_prj), '..'))
+        sys.path.append(str(_prj))
+        sys.path.append(os.path.join(str(_prj), 'smores'))
         _config = _prj.joinpath('smores','config')
-        cache_base = _prj.joinpath('smores', 'cache')
+        cache_base = _prj.joinpath('smores','cache')
         _logconfig = _config.joinpath('logging.yaml')
         _metapath = _config.joinpath('_metadata.py')
         _meta = {}
         if _logconfig.exists():
             with open(_logconfig, 'rt') as f:
-                config = yaml.load(f.read())
+                config = yaml.load(f.read(), Loader=yaml.FullLoader)
             logging.config.dictConfig(config)
 
         try:
