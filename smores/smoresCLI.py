@@ -3,7 +3,7 @@ import logging
 import timeit
 import smores.processes as smores
 from smores.utility.errors import smores_error
-from smores.utility.util import validate_id
+from smores.utility.util import validate_id, resolve_target_path
 import smores.utility.util as util
 
 smoresLog = logging.getLogger(__name__)
@@ -23,10 +23,11 @@ class smoresCLI(cmd.Cmd):
             'Type help or ? to list commands.\n '
         self.inputs = {'loaded': False, 'files': {}, 'count': 0}
         self.prompt = '>'
-        self.use_rawinput = True
         self.errors = {}
         self.files = self.inputs['files']
-        self.cmds = ['rxn_ing','rxn_status','fhir','csv','rxn_lookup','rxn_remap','rxn_history']
+        self.cmds = ['rxn_ing','rxn_status','rxn_lookup','rxn_remap','rxn_history']
+        self.output_cmds = ['fhir', 'csv']
+        self.client_run_function = smores.get_run_call
 
     @staticmethod
     def simple_input(question, values, index=False):
@@ -160,6 +161,55 @@ class smoresCLI(cmd.Cmd):
                         print('Empty file name provided, using default.')
                 else:
                     valid_2 = args[0]
+        elif cmd_call == 'file':
+            re_use = False
+            if self.inputs['loaded'] and len(in_args) == 0:
+                print("The following file(s) have already been loaded: \n" + str(self.inputs['files']))
+                _load_more = self.simple_input("Would you like to load an additional file?", ['Y', 'N', 'exit'])
+                if _load_more == 'Y':
+                    pass
+                elif _load_more == 'N':
+                    _re_use = self.simple_input("Would you like to re-use a loaded file?", ['Y', 'N', 'exit'])
+                    if _re_use == 'Y':
+                        re_use = True
+                    else:
+                        return False, None
+                else:
+                    return False, None
+
+            if in_args is not None and len(in_args) > 0:
+                valid_1 = in_args
+            else:
+                valid_1 = input("Please enter the name of the file to load: ") if not re_use else self.simple_input('Select the file to be used: ', list(self.inputs['files'].keys()), index=True)
+
+            while True:
+                if valid_1 in self.inputs['files']:
+                    if not re_use:
+                        print("It looks like you've already loaded that file. Please try a different file.")
+                        valid_1, valid_2 = input("Please enter the name of the file to load: ")
+                    else:
+                        break
+                elif len(valid_1) == 0:
+                    smores_error('#Cx001.7', logger=smoresLog)
+                    valid_1, valid_2 = input("Please enter the name of the file to load: ")
+                else:
+                    break
+
+            if not resolve_target_path(valid_1):
+                valid_1, valid_2 = self.validate_args('', 'file')
+
+            elif '.smr' in valid_1:
+                if len(self.inputs['files']) > 0:
+                    print(
+                        'It looks like you are trying to load a session, this will replace the current session and all previous work.')
+                    _save = self.simple_input('Do you want to save the current session first?', ['Y', 'N', 'EXIT'])
+                    if _save == 'Y':
+                        smores.save_session(self.__version__)
+                    elif _save == 'EXIT':
+                        return False, None
+                valid_2 = 'session'
+            else:
+                valid_2 = 'file'
 
         smoresLog.debug('Args: {0}, Validated as: {1}'.format(valid_1, valid_2))
         return valid_1, valid_2
@@ -200,9 +250,12 @@ class smoresCLI(cmd.Cmd):
             _r = func(client_cmd=cmd, med_id=in_id, med_id_type=in_type)
         return _r
 
-    def run_file_call(self, func, cmd:str):
-        file_msg = "Run {0} on all loaded files?".format(cmd)
-        _run = self.simple_input(file_msg, ['Y', 'N', 'exit'])
+    def run_file_call(self, func, cmd:str, file:str=None):
+        if file is None:
+            file_msg = "Run {0} on all loaded files?".format(cmd)
+            _run = self.simple_input(file_msg, ['Y', 'N', 'exit'])
+        else:
+            _run = 'Y'
 
         if _run == 'Y':
             _avail = self.get_untouched(cmd)
@@ -220,9 +273,9 @@ class smoresCLI(cmd.Cmd):
                 else:
                     return
 
-            if len(_avail) == 1:
+            if len(_avail) == 1 and file is None:
                 file = 'ALL'
-            else:
+            elif file is None:
                 _avail.append('ALL')
                 _avail.append('exit')
                 file = self.simple_input("Please choose a file to run, or run all:", _avail)
@@ -243,11 +296,11 @@ class smoresCLI(cmd.Cmd):
             print('Invalid Option')
 
     def run_cmd(self, arg, cmd_call):
-        cmd_func = smores.run_client_cmd
+        run_func = self.client_run_function()
         if len(arg) > 0:
             validated_cui, cui_type = self.validate_args(arg, cmd_call) #
             if validated_cui is not None:
-                id_result = self.run_id_call(cmd_func, cui_type, validated_cui, cmd_call)
+                id_result = self.run_id_call(run_func, cui_type, validated_cui, cmd_call)
             else:
                 id_result = None
 
@@ -272,13 +325,13 @@ class smoresCLI(cmd.Cmd):
                 smores_error('#Cx004.3')
 
         elif self.inputs['loaded']:
-            count_ran, errors, file = self.run_file_call(cmd_func, cmd_call)
+            count_ran, errors, file = self.run_file_call(run_func, cmd_call)
 
             if count_ran is None:
                 return
             else:
                 self.set_touched(file, cmd_call)
-                print('Command {0} Completed for {1} medications'.format(cmd_call,count_ran))
+                print('Command {0} Completed for {1} medications'.format(cmd_call, count_ran))
 
             if len(errors) > 0 and len(errors[0]) > 0:
                 self.update_errors(cmd_call, errors)
@@ -293,9 +346,8 @@ class smoresCLI(cmd.Cmd):
         else:
             self.errors[cmd] += errors
 
-    def do_exit(self, arg=None):
-        print('Until next time...')
-        return True
+    def is_output_cmd(self, cmd):
+        return True if cmd in self.output_cmds else False
 
     def do_load(self, arg):
         print('Load')
@@ -304,88 +356,133 @@ Syntax: load [file_name]
     - [file_name] is optional at entry but will be required.
     Files by default are expected to reside in this programs '/input' folder. If located under
     a different path, it must be fully specified"""
-        if len(arg.strip()) > 0:
-            _file = arg
-        else:
-            _file = None
-
-        def _do_load(_input=None):
-            print("* Note: All input files must reside in the 'input' folder of this program "
-                  "or contain a fully specified file path")
-            if _input is None:
-                _file_input = input("Please enter the name of the file to load: ")
+        load_type = None
+        def _do_session_load(session:str):
+            loaded = smores.load_session(session, self.__version__)
+            if len(loaded) > 0:
+                self.inputs['loaded'] = True
+                self.inputs['files'] = {file: {} for file in loaded}
+                for _file in self.inputs['files']:
+                    self.inputs['files'][_file] = {_c: False for _c in self.cmds}
+                print('Session {0} Load Complete'.format(session))
+                print('Note: All SMOREs commands have been reset')
             else:
-                _file_input = _input
-            if _file_input in self.inputs['files']:
-                print("It looks like you've already loaded that file. Please try a different file.")
-            elif '.smr' in _file_input:
-                if len(self.inputs['files']) > 0:
-                    print('It looks like you are trying to load a session, this will replace all previous work.')
-                    _save = self.simple_input('Do you want to save the current session first?',['Y','N','EXIT'])
-                    if _save == 'Y':
-                        smores.save_session(self.__version__)
-                    elif _save == 'EXIT':
-                        return
-                loaded = smores.load_session(_file_input, self.__version__)
-                if len(loaded) > 0:
-                    self.inputs['loaded'] = True
-                    self.inputs['files'] = {file: {} for file in loaded}
-                    for _file in self.inputs['files']:
-                        self.inputs['files'][_file] = {_c: False for _c in self.cmds}
-                    print('Session {0} Load Complete'.format(_file_input))
-                    print('Note: All SMOREs commands have been reset')
-                else:
-                    print('Failed to Load Files from Session')
-            else:
-                tic = timeit.default_timer()
-                success, result = smores.load_file(_file_input)
-                if success:
-                    self.inputs['loaded'] = True
-                    self.inputs['files'][_file_input] = {_c : False for _c in self.cmds}
-                    self.inputs['count'] += result['records']
-                    toc = timeit.default_timer()
-                    elapsed = str(round(toc - tic, 2))
-                    print('\nElapsed Time: ' + str(elapsed) + ' seconds')
-                    print("\nSuccess! {0} New Medication(s) Successfully Loaded from File".format(result['records']))
-                    if result['dups'] > 0:
-                        print("{0} Duplicate Local ID's were found. New Information "
-                              "was added to previous record.".format(str(result['dups'])))
-                    if len(result['errors']) > 0:
-                        self.update_errors('load', result['errors'])
-                    return
-                else:
-                    if result is not None:
-                        smores_error(result, console_p=True)
-                    else:
-                        print('Something went wrong...')
-                    return
+                print('Failed to Load Files from Session')
 
-        if self.inputs['loaded']:
-            print("The following file(s) have already been loaded: \n"+str(self.inputs['files']))
-            _load_more = self.simple_input("Would you like to load an additional file?",  ['Y', 'N', 'exit'])
-            if _file is not None:
-                print('Current File to Be Loaded: '+_file)
-            if _load_more == 'Y':
-                _do_load(_file)
-            elif _load_more in ('N', '', 'exit'):
-                print("Returning to Starting Point")
+        def _do_file_load(file:str):
+            tic = timeit.default_timer()
+            success, result = smores.load_file(file)
+            if success:
+                self.inputs['loaded'] = True
+                self.inputs['files'][file] = {_c : False for _c in self.cmds}
+                self.inputs['count'] += result['records']
+                toc = timeit.default_timer()
+                elapsed = str(round(toc - tic, 2))
+                print('\nElapsed Time: ' + str(elapsed) + ' seconds')
+                print("\nSuccess! {0} New Medication(s) Successfully Loaded from File".format(result['records']))
+                if result['dups'] > 0:
+                    print("{0} Duplicate Local ID's were found. New Information "
+                          "was added to previous record.".format(str(result['dups'])))
+                if len(result['errors']) > 0:
+                    self.update_errors('load', result['errors'])
                 return
             else:
-                print("Unknown Entry")
-                self.do_load()
+                if result is not None:
+                    smores_error(result, console_p=True)
+                else:
+                    print('Something went wrong...')
+                return
+
+        print("* Note: All input files must reside in the 'input' folder of this program "
+              "or contain a fully specified file path (e.g. 'C:\\Users\\Bob\\Desktop\\my_file.csv')")
+
+        if type(arg) is list:
+            _file = arg[0]
+            if len(arg) == 2:
+                load_type = arg[1]
+        elif type(arg) is str and len(arg.strip()) > 0:
+            _file = arg
         else:
-            _do_load(_file)
+            _file = ''
 
-    def do_workflow(self):
+        if load_type:
+            target = _file
+        else:
+            target, load_type = self.validate_args(_file, 'file')
+
+        if target:
+            if load_type == 'file':
+                _do_file_load(target)
+            elif load_type == 'session':
+                _do_session_load(target)
+            else:
+                return
+        else:
+            return
+
+    def do_workflow(self, arg):
         """Define a sequence of commands to be ran """
-        options = sorted(self.cmds)
-        print('Preparing Workflow Wizard...')
-        _file = input('Please provide a file name:')
+        def add_steps_to_workflow(workflow):
+            while True:
+                cmd = self.simple_input('Please choose a command to add to the workflow.', cmds, True)
+                if cmd not in ['DONE', 'EXIT']:
+                    if self.is_output_cmd(cmd):
+                        workflow.add_output(cmd)
+                    else:
+                        workflow.add_step(cmd)
+                    cmds.pop(cmds.index(cmd))
+                elif cmd == 'DONE':
+                    break
+                else:
+                    return
+            return workflow.has_steps()
 
-        #TODO flesh out full workflow definition process
-        print('Available Commands for WorkFlow')
-        for i, _o in enumerate(options):
-            print('{0}) {1}'.format(i, _o))
+        def confirm_workflow(workflow):
+            checks = [('START','Start workflow?'), ('ADD', 'Do you want to add more steps?'),('RESTART', 'Do you want to start over?')]
+            workflow.draw_steps()
+            for check in checks:
+                _run = self.simple_input(check[1], ['Y', 'N', 'EXIT'])
+                if _run == 'Y':
+                    return check[0]
+                if _run == 'EXIT':
+                    return 'EXIT'
+            return 'INVALID'
+
+        print('Preparing Workflow Wizard...')
+        options = sorted(self.cmds + self.output_cmds)
+        from smores.workflow import Workflow
+        workflow = Workflow(self)
+        target, load_type = self.validate_args('', 'file')
+        if target:
+            _l = True if target in self.inputs['files'].keys() else False
+            workflow.add_target(target, load_type, _l)
+            print('Please choose the commands you would like to add to the workflow.'
+                  '\nCommands will be executed in the order in which they are added.'
+                  '\n\nPlease note that some commands have dependencies that must be satisfied. An overview of command dependencies is available on the main SMOREs wiki on Github')
+            print('\nAvailable Commands for WorkFlow')
+            cmds = []
+            for i, _o in enumerate(options):
+                print('{1}'.format(i, _o))
+                cmds.append(_o)
+            cmds.append('DONE')
+            steps_added = add_steps_to_workflow(workflow)
+            while steps_added:
+                _run = confirm_workflow(workflow)
+                if _run == 'START':
+                    break
+                elif _run == 'ADD':
+                    _ = add_steps_to_workflow(workflow)
+                elif _run == 'RESTART':
+                    self.do_workflow('')
+                else:
+                    return
+            workflow.run()
+            print('Workflow has completed.')
+            return
+
+        else:
+            print('Workflows currently have to be setup without the file already being loaded.')
+            return
 
     def do_load_count(self, arg):
         print(self.inputs['count'])
@@ -445,7 +542,7 @@ Syntax: load [file_name]
             params = {}
             csv_constructor = {}
             if t_type == 'FILE':
-                cmd_call = smores.run_med_to_csv
+                cmd_call = self.client_cmd_function('csv_FILE')
                 print('Default output is : LOCAL_ID | LOCAL_NAME | SOURCE | CUI | CUI_TYPE')
                 #TODO Add in customization of CSV structure
                 params['default'] = 'Y'
@@ -457,7 +554,7 @@ Syntax: load [file_name]
                 if params['default'] == 'Y':
                     csv_constructor['default'] = ''
             elif t_type == 'DICT':
-                cmd_call = smores.run_dict_to_csv
+                cmd_call = self.client_cmd_function('csv_DICT')
                 print('Default output is : CUI | CUI Name | CUI Type | Term Type (If applicable)')
                 params['default'] = 'Y'
                 # TODO Add in customization of CSV structure
@@ -480,6 +577,10 @@ Syntax: load [file_name]
             if error_code is not None:
                 _e = self.errors[error_code]
                 print('Errors Encountered for "{0}" : \n{1}\n\n'.format(error_code, _e))
+
+    def do_exit(self, arg=None):
+        print('Until next time...')
+        return True
 
     def emptyline(self):
         """Do nothing on an empty input line"""

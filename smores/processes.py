@@ -270,6 +270,20 @@ def process_event(src:Union[MedKit, str], func, display:str, event_restrict=None
         smores_error('#Cx004.2')
         return False, None
 
+def get_run_call(client_cmd:str='default', opt:str=None):
+    client_cmds = {
+        'default': run_client_cmd,
+        'csv': run_med_to_csv,
+        'csv_FILE': run_med_to_csv,
+        'csv_DICT': run_dict_to_csv,
+        'fhir': run_med_to_json
+    }
+    try:
+        _cmd = client_cmds[client_cmd] if opt is None else client_cmds[client_cmd][opt]
+    except KeyError:
+        return client_cmds['default']
+    else:
+        return _cmd
 
 def run_client_cmd(client_cmd:str, med_id:str=None, med_id_type:str=None, file:str=None):
     client_cmds = {'rxn_status': {'func': get_rxn_status, 'display': 'RxNorm Status', 'restrict': None},
@@ -445,7 +459,6 @@ def get_rxn_history(medObj:m.RxCUI, api:str='RXNAV'):
     return True, None
 
 
-# TODO This needs to be compeltely rebuilt to accomodate changes to print and data structure
 def run_med_to_json(med_id=None, med_id_type:str=None, file:str=None,
                     out_file:str=None):
     '''
@@ -460,7 +473,7 @@ def run_med_to_json(med_id=None, med_id_type:str=None, file:str=None,
     smoresLog.debug('Preparing to generate FHIR JSON Files')
 
     def get_bundle_json(in_dict:md.MedicationDictionary, json_file:str):
-        incr = int(util.read_config_value('OUTPUT')['file_size_max'])
+        incr = int(util.read_config_value('OUTPUT_CONF')['file_size_max'])
         _total = in_dict.get_med_count()
         _iters = int(math.ceil(_total/incr)) if incr is not None else 1
         _med_list = list(in_dict.med_list.values())
@@ -506,7 +519,7 @@ def run_med_to_json(med_id=None, med_id_type:str=None, file:str=None,
         smores_error('#Kx001.2')
     return
 
-def run_med_to_csv(file:str=None,out_file:str=None, params=None):
+def run_med_to_csv(file:str=None,out_file:str=None, params:dict=None):
     '''
     Only supports outputing bundles, not individual meds
     :param file: the target input file to be output to CSV, or ALL
@@ -516,9 +529,9 @@ def run_med_to_csv(file:str=None,out_file:str=None, params=None):
     :return:
     '''
     smoresLog.debug('Preparing to generate CSV')
-    incr = int(util.read_config_value('OUTPUT')['file_size_max'])
+    incr = int(util.read_config_value('OUTPUT_CONF')['file_size_max'])
     csv_files = {}
-    csv_outputs = params.keys()
+    csv_outputs = params.keys() if params is not None else ''
     if 'detail' in csv_outputs:
         for _d in params['detail'].values():
             base_filename, ext = process_filename(_d['type'])
@@ -543,7 +556,7 @@ def run_med_to_csv(file:str=None,out_file:str=None, params=None):
 
 def run_dict_to_csv(dict:str, out_file:str=None, params=None):
     csv_details = {'cui': {'src': dict}}
-    incr = int(util.read_config_value('OUTPUT')['file_size_max'])
+    incr = int(util.read_config_value('OUTPUT_CONF')['file_size_max'])
     dict_to_save = md.get_med_dict_by_src(dict)
     _file, ext = process_filename(out_file=out_file, info_type=dict)
     return save_csv_bundle(dict_to_save, _file, incr, csv_details, ext=ext)
@@ -575,7 +588,7 @@ def save_csv_bundle(in_dict:md.MedicationDictionary, out_file:str, incr:int, csv
     return
 
 
-def save_session(SMOREs_version):
+def save_session(SMOREs_version:str):
     import pickle
     print('Saving Session...')
     _write_path = Path('../output/')
