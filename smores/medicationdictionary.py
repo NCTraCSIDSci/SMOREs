@@ -45,13 +45,16 @@ class MedicationDictionary:
     def load_session(meddicts:dict):
         _e = []
         md_list = MedicationDictionary.get_src_list()
-        for dic, obj in md_list.items():
-            for med in obj.med_list:
-                med.remove()
-            md_list[dic] = None
-            del obj
-            MedicationDictionary.src_list.pop(dic)
-        MedicationDictionary.src_list = {}
+        try:
+            for dic, obj in md_list.items():
+                for med in obj.med_list:
+                    med.remove()
+                md_list[dic] = None
+                del obj
+                MedicationDictionary.src_list.pop(dic)
+            MedicationDictionary.src_list = {}
+        except:
+            pass
         for src, obj in meddicts.items():
             if isinstance(obj, dict):
                 _inner = {}
