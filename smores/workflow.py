@@ -57,6 +57,7 @@ class Workflow:
         for output in self.outputs:
             output_func = self.client.client_run_function(output)
             output_func(self.target['name'])
+        return
 
 
 

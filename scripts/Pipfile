@@ -8,8 +8,12 @@ verify_ssl = true
 [packages]
 pandas = "*"
 requests-cache = "*"
+requests = "*"
 PyYAML = "*"
 tqdm = "*"
+six = "*"
+colorama = "*"
+termcolor = "*"
 
 [requires]
 python_version = "3.6"
