@@ -88,25 +88,25 @@ def line_read (medkit, input, last_id=None, skip1=True):
         return local_id, is_dup, has_err, cui_type
 
 
-def load_file(input_file):
-    def process_file(medkit):
+def load_file(input_file:str):
+    def process_file(curr_medkit):
         try:
             c_records = 0
             c_dup = 0
             errors = []
             _last = None
-            with open(medkit.path, 'r') as file_handle:
+            with open(curr_medkit.path, 'r') as file_handle:
                 reader = csv.DictReader(file_handle, delimiter=",", skipinitialspace=True)
 
-                for line in tqdm(enumerate(reader), total=medkit.file_lines, desc="Progress", unit=' rows'):
-                    _med, _dup, _err, _type = line_read(medkit, line, _last, False)
+                for line in tqdm(enumerate(reader), total=curr_medkit.file_lines, desc="Progress", unit=' rows'):
+                    _med, _dup, _err, _type = line_read(curr_medkit, line, _last, False)
                     if _med is None:
                         smores_error(_err)
                     elif not _med:
                         pass
                     else:
                         if not _dup:
-                            medkit.add_med(_med, _type)
+                            curr_medkit.add_med(_med, _type)
                             c_records += 1
                             _last = _med
                         if _dup:

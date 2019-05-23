@@ -100,13 +100,13 @@ If your group uses SMOREs in support of a research project, please include the a
 
 This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details
 
-#####RxNav API
+##### RxNav API
 >This product uses publicly available data from the U.S. National Library of Medicine (NLM), National Institutes of Health, Department of Health and Human Services; NLM is not responsible for the product and does not endorse or recommend this or any other product.
 
-#####openFDA API
+##### openFDA API
 >Data provided by the U.S. Food and Drug Administration (https://open.fda.gov/terms/)
 
-#####UMLS API
+##### UMLS API
 >This product uses publicly available data from the U.S. National Library of Medicine (NLM), National Institutes of Health, Department of Health and Human Services; NLM is not responsible for the product and does not endorse or recommend this or any other product.
 
 ## Acknowledgments
