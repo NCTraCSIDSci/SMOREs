@@ -9,6 +9,7 @@ input/*
 smores/logs/*
 smores/tests/*.log
 !smores/logs/.gitkeep
+scripts/Pipfile.lock
 
 ##############################
 # Python

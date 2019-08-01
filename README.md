@@ -31,12 +31,33 @@ https://tracs.unc.edu/index.php/tracs-resources/sharehub/category/2-informatics
 
 
 #### Option 2 : Download Source Code and Manual Install
-All Python library dependencies must be installed
+All Python library dependencies must be installed. There are a couple of options on how to ensure that all required dependencies.
+##### 1. `pipenv` using Pipfile
+A pipfile is included in the `install` directory of SMOREs to allow for quick setup of a virtual environment with all necessary dependencies. This does require that `pipenv` is installed.
 
+Instructions on installing `pipenv` are available at: [pipenv.org](https://docs.pipenv.org/en/latest/install/#installing-pipenv)
+
+Once installed running the following command within the `install` directory will perform the necessary steps.
+```
+pipenv install
+pipenv run smores
+```
+
+##### 2. `pip` install using requirements.txt
+A compiled list of all package requirements is also available to be installed via pip using the requirements.txt file within the `install` directory
+```
+cd to [smores directory]
+pip install -r requirements.txt
+```
+
+
+##### 3. Manually install all requirements
+Each required package list in the **Python Libraries Required** section can be installed manually via `pip`. SMOREs will need to be executed via a python interpreter that has all of the modules available.
 ```
 pip install PyYAML
 etc..
 ```
+
 
 ## Verifying Installation
 
@@ -79,13 +100,13 @@ If your group uses SMOREs in support of a research project, please include the a
 
 This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details
 
-#####RxNav API
+##### RxNav API
 >This product uses publicly available data from the U.S. National Library of Medicine (NLM), National Institutes of Health, Department of Health and Human Services; NLM is not responsible for the product and does not endorse or recommend this or any other product.
 
-#####openFDA API
+##### openFDA API
 >Data provided by the U.S. Food and Drug Administration (https://open.fda.gov/terms/)
 
-#####UMLS API
+##### UMLS API
 >This product uses publicly available data from the U.S. National Library of Medicine (NLM), National Institutes of Health, Department of Health and Human Services; NLM is not responsible for the product and does not endorse or recommend this or any other product.
 
 ## Acknowledgments

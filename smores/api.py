@@ -3,11 +3,14 @@ import re
 from datetime import datetime, timedelta
 import time
 import logging
+import json
 # Community Modules
 import requests
 import requests_cache
 # SMOREs Internal Imports
 from smores.utility.errors import smores_error
+import smores.utility.Authenticate as auth
+import smores.utility.util as util
 
 APIlog = logging.getLogger(__name__)
 
@@ -52,25 +55,33 @@ class SMORESapi:
 
             for _pl, _p in endpoint['payload'].items():
                 if type(_p) is list:
-                    if _p[1] == 'PRIMARY':
-                        _pl_val = val
-                    elif c_opt is not None and _p[1] in c_opt:
-                        _pl_val = c_opt[_p[1]]
+                    if _pl == 'regex':
+                        for i in range(len(_p)):
+                            _re = re.compile('\*'+str(_p[i])+'\*')
+                            api_call = re.sub(_re, str(c_opt[_p[i]]), api_call)
                     else:
-                        smores_error(self.get_e('4', c_ovrd=SMORESapi.e_subclass), [self.api_short, _pl], logger=APIlog)
-                        return False
-                    payload[_pl] = _p[0] + str(_pl_val)
+                        if _p[1] == 'PRIMARY':
+                            _pl_val = val
+                        elif c_opt is not None and _p[1] in c_opt:
+                            _pl_val = c_opt[_p[1]]
+                        else:
+                            smores_error(self.get_e('4', c_ovrd=SMORESapi.e_subclass), [self.api_short, _pl], logger=APIlog)
+                            return False
+                        payload[_pl] = _p[0] + str(_pl_val)
                 else:
                     if _p == 'PRIMARY':
                         _pl_val = val
-                    elif c_opt is not None:
+                    elif c_opt is not None and type(c_opt) is str:
                         _pl_val = c_opt
+                    elif c_opt is not None and type(c_opt) is dict:
+                        _pl_val = c_opt[_pl]
                     elif _p is not None:
                         _pl_val = _p
                     else:
                         smores_error(self.get_e('4', c_ovrd=SMORESapi.e_subclass), [self.api_short, _pl], logger=APIlog)
                         return False
                     payload[_pl] = str(_pl_val)
+
         else:
             smores_error(self.get_e('2'), [api_call, self.api_name], logger=APIlog)
             return False
@@ -81,7 +92,12 @@ class SMORESapi:
             response.raise_for_status()
             if response.from_cache:
                 APIlog.info('API Results from cache: %s', response.url)
-            return True, response.json(), response.url
+            response.encoding = 'utf-8'
+            try:
+                json_data = response.json()
+            except ValueError:
+                json_data = json.load(response.text)
+            return True, json_data, response.url
         except (requests.ConnectionError, requests.Timeout) as e:
             smores_error(self.get_e('1', c_ovrd=SMORESapi.e_subclass), [api_call, self.api_name, e], logger=APIlog)
             return False, api_call, None
@@ -573,3 +589,68 @@ class openFDADevice(openFDA):
                 return True
             else:
                 return False
+
+
+class UMLS(SMORESapi):
+
+    def __init__(self, apikey=None, authuser=None, authpwd=None):
+        super(UMLS, self).__init__()
+        self.api_url = 'https://uts-ws.nlm.nih.gov/rest/'
+        self.auth_uri = 'https://utslogin.nlm.nih.gov/'
+        self.auth_endpoints = {'apikey': 'cas/v1/api-key', 'user': 'cas/v1/tickets/'}
+        self.auth_client = auth.Authenticate(self.auth_uri, self.auth_endpoints, apikey, authuser, authpwd)
+        self.st_service = 'http://umlsks.nlm.nih.gov'
+        self.endpoints = {
+            'STATUS': {
+                'base': 'content/current/*SRC*/*CODE*',
+                'payload': {'ticket': '', 'regex': ['SRC']}
+            },
+            'CROSSWALK': {
+                'base': '/crosswalk/current/source/*SRC*/*CODE*',
+                'payload': {'targetSource': '', 'ticket': '', 'regex': ['SRC']}
+            }
+        }
+
+    def get_st(self):
+        return self.auth_client.get_service_ticket(self.st_service)
+
+    def get_cui_status(self, cui, src:str='CUI'):
+        _opts = {'ticket': self.get_st(), 'SRC': src}
+        if src.upper() in util.UMLS_VALID_SRCS.keys() or src == 'CUI':
+            success, response, api_url = self.call_api('STATUS', cui, _opts)
+            if success and response is not None:
+                try:
+                    cui_status = response['result']['status']
+                except KeyError or IndexError:
+                    smores_error(self.get_e('1'), api_url, logger=APIlog)
+                    return False, None
+                else:
+                    return True, cui_status
+            print(json.dumps(response, indent=4))
+            return success, response
+        else:
+            smores_error(self.get_e('4'), self.api_url, logger=APIlog)
+            return False, None
+
+    def get_crosswalk_cui(self, cui, src, target_src):
+        _opts = {'ticket': self.get_st(), 'SRC': src, 'targetSource': target_src}
+        if src.upper() in util.UMLS_VALID_SRCS.keys() and target_src in util.UMLS_VALID_SRCS.keys():
+            success, response, api_url = self.call_api('CROSSWALK', cui, _opts)
+            if success and response is not None:
+                try:
+                    cui_crosswalk = [atomCluster['ui'] for atomCluster in response['result']]
+                    _r = True
+                except KeyError or IndexError:
+                    smores_error(self.get_e('1'), api_url, logger=APIlog)
+                    return False, None
+                else:
+                    return _r, cui_crosswalk
+
+    def validate(self, args:list):
+        cui = args[0]
+        src = args[1] if len(args) == 2 else 'CUI'
+        response, status = self.get_cui_status(cui, src)
+        if response and status != 'UNKNOWN':
+            return True
+        else:
+            return False

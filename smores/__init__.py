@@ -14,6 +14,6 @@ if not smoresLog.hasHandlers():
     _logconfig = _config.joinpath('logging.yaml')
     if _logconfig.exists():
         with open(_logconfig, 'rt') as f:
-            config = yaml.load(f.read())
+            config = yaml.load(f.read(), Loader=yaml.SafeLoader)
         logging.config.dictConfig(config)
 
