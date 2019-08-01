@@ -20,12 +20,21 @@ RXNORM_TTY_SUPPORT_DICT = {'SBD': {'name': 'Semantic Branded Drug'},
     'GPCK':{'name':''},
     'BPCK':{'name':''}
 }
+
 FHIR_CODESET_SYSTEMS = {
     'RXNORM': 'http://www.nlm.nih.gov/research/umls/rxnorm',
     'NDC': 'http://hl7.org/fhir/sid/ndc',
-    'SNOMED': 'http://snomed.info/sct'
+    'SNOMEDCT_US': 'http://snomed.info/sct'
 }
 
+UMLS_VALID_SRCS = {
+    'MED-RT': 'Medication Reference Terminology',
+    'NDFRT': 'National Drug File - Reference Terminology',
+    'RXNORM': 'RXNORM',
+    'SNOMEDCT_US': 'US Edition of SNOMED CT',
+    'CPT': 'Current Procedural Terminology',
+    'HCPCS': 'Healthcare Common Procedure Coding System'
+}
 
 def flatten_dict(d, parent_key='', sep='_'):
     items = []
@@ -63,6 +72,33 @@ def validate_id(id, id_type):
         valid_id_check = True if len(id) > 0 else False
     return valid_id_check
 
+
+def resolve_target_path(target):
+    if ':\\' in target:
+        target_path = Path(target).resolve()
+    elif 'tests/' in target:
+        target_path = Path("..", 'tests', target).resolve()
+    else:
+        target_path = Path("..", 'input', target).resolve()
+
+    try:
+        if target_path.exists():
+            return target_path
+        else:
+            raise FileNotFoundError
+
+    except FileNotFoundError:
+        smores_error("#Cx001.1")
+        return False
+    except PermissionError:
+        smores_error('#Cx001.2')
+        return False
+    except OSError as e:
+        smores_error('#Cx001.6', supplement=e, console_p=True)
+        return False
+    except BaseException as e:
+        smores_error('#Cx001.6', supplement=e, console_p=True)
+        return False, None
 
 def get_util_base(type):
     i = 0
@@ -129,5 +165,6 @@ def read_config_value(setting):
         smores_error('#Cx001.2', console_p=True, supplement='config.ini')
         return None
 
-
+def harmonize_cui_status(in_status):
+    return
 

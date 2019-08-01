@@ -48,7 +48,7 @@ python tests\verifyInstall.py
 ```
 
 ## Usage
-For more information on available commands, processes and functionality please visit the [SMOREs Wiki]() for up to date descriptions of functionality within the application.
+For more information on available commands, processes and functionality please visit the [SMOREs Wiki](https://github.com/NCTraCSIDSci/SMOREs/wiki) for up to date descriptions of functionality within the application.
 
 ## Contributing
 
