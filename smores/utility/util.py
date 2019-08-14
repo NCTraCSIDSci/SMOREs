@@ -105,6 +105,12 @@ def get_util_base(type):
     _prj = Path.cwd()
     if 'smores' in _prj.parts:
         while True:
+            ######## pikovach added this to correct for path resolution issues ##############################################
+            head, tail = os.path.split(_prj)
+            if(tail == 'smores'):
+                _prj=Path.cwd()
+                return _prj
+            #################################################################################################################
             _par = _prj.parents[i]
             head, tail = os.path.split(_par)
             if tail == 'smores':
