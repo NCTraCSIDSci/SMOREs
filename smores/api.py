@@ -11,7 +11,7 @@ import requests
 import requests_cache
 # SMOREs Internal Imports
 from smores.utility.errors import smores_error
-from smores.utility.Authenticate import Authenticate, get_service_ticket
+from smores.utility.Authenticate import Authenticate
 from requests import Session
 import smores.utility.util as util
 
@@ -144,6 +144,12 @@ class openFDA(SMORESapi):
                 'payload': {
                     'search': ['product_ndc:', 'PRIMARY']
                 }
+            },
+            'CROSSWALK': {
+                'base': 'ndc.json',
+                'payload': {
+                    'search': ['openfda.rxcui:', 'PRIMARY']
+                }
             }
         }
         if self.api_key is not None:
@@ -161,7 +167,6 @@ class openFDA(SMORESapi):
         _r, package_ndc, generic, brand, dose, form = (None for i in range(6))
         if success and 'error' not in response.keys():
             results = response['results'][0]
-            _r_keys = results.keys()
             if len(results['packaging']) > 1:
                 for _ndc in results['packaging']:
                     if _ndc['package_ndc'] == ndc:
@@ -170,30 +175,8 @@ class openFDA(SMORESapi):
                     package_ndc = results['product_ndc']
             else:
                 package_ndc = results['packaging'][0]['package_ndc']
-            generic = results['generic_name'] if 'generic_name' in _r_keys else False
-            brand = results['brand_name'] if 'brand_name' in _r_keys else False
-            _dose = [ing['strength'] for ing in
-                     results['active_ingredients']] if 'active_ingredients' in _r_keys else False
-            form = results['dosage_form']
-            dose = '(' + '|'.join(_d for _d in _dose) + ')' if _dose else ''
-            if generic and brand:
-                _base = generic + ' [' + brand + ']'
-            elif generic:
-                _base = generic
-            elif brand:
-                _base = brand
-            else:
-                _base = ''
-            full_name = ' '.join([_base, dose, form]).upper()
-            if 'listing_expiration_date' in _r_keys or 'marketing_end_date' in _r_keys:
-                _list_expire = datetime.strptime(results[
-                                                     'listing_expiration_date' if 'listing_expiration_date' in _r_keys else 'marketing_end_date'],
-                                                 '%Y%m%d')
-            else:
-                _list_expire = datetime.strptime('99991231', '%Y%m%d')
-            _d = datetime.today()
-            status = 'valid' if _list_expire > _d else 'expired'
-            _r = {'ndc': package_ndc, 'name': full_name, 'status': status}
+            _ndc = self.process_ndc(results)
+            _r = {'ndc': package_ndc, 'name': _ndc['name'], 'status': _ndc['status']}
         else:
             smores_error(self.get_e('1'), api_url, logger=APIlog)
         return _r
@@ -222,38 +205,58 @@ class openFDA(SMORESapi):
 
     def get_ndc_product(self, ndc):
         success, response, api_url = self.call_api('PRODUCT', ndc)
-        _r, product_ndc, generic, brand, dose, form = (None for i in range(6))
         if success and 'error' not in response.keys():
             results = response['results'][0]
-            _r_keys = results.keys()
-            try:
-                generic = results['generic_name'] if 'generic_name' in _r_keys else False
-                brand = results['brand_name'] if 'brand_name' in _r_keys else False
-                _dose = [ing['strength'] for ing in
-                         results['active_ingredients']] if 'active_ingredients' in _r_keys else False
-                form = results['dosage_form']
-                dose = '(' + '|'.join(_d for _d in _dose) + ')' if _dose else ''
-                if generic and brand:
-                    _base = generic + ' [' + brand + ']'
-                elif generic:
-                    _base = generic
-                elif brand:
-                    _base = brand
-                else:
-                    _base = ''
-                full_name = ' '.join([_base, dose, form]).upper()
-                _list_expire = datetime.strptime(results[
-                                                     'listing_expiration_date' if 'listing_expiration_date' in _r_keys else 'marketing_end_date'],
-                                                 '%Y%m%d')
-                _d = datetime.today()
-                status = 'valid' if _list_expire > _d else 'expired'
-                _r = {'ndc': product_ndc, 'name': full_name, 'status': status}
-            except KeyError:
-                _r = None
-                smores_error(self.get_e('2'), api_url, logger=APIlog)
+            _r = self.process_ndc(results)
         else:
             smores_error(self.get_e('1'), api_url, logger=APIlog)
         return _r
+
+    def get_ndc_by_rxcui(self, rxcui):
+        success, response, api_url = self.call_api('CROSSWALK', rxcui)
+        if success and 'error' not in response.keys():
+            results = response['results']
+            ndc_list = []
+            for result in results:
+                _r = self.process_ndc(result)
+                if _r is not None:
+                    ndc_list.append(_r)
+            return ndc_list
+
+    def process_ndc(self, ndc_data):
+        try:
+            _r_keys = ndc_data.keys()
+            if len(_r_keys) == 0:
+                return None
+            _r, product_ndc, generic, brand, dose, form = (None for i in range(6))
+
+            product_ndc = ndc_data['product_ndc'] if 'product_ndc' in _r_keys else False
+            generic = ndc_data['generic_name'] if 'generic_name' in _r_keys else False
+            brand = ndc_data['brand_name'] if 'brand_name' in _r_keys else False
+            _dose = [ing['strength'] for ing in
+                     ndc_data['active_ingredients']] if 'active_ingredients' in _r_keys else False
+            form = ndc_data['dosage_form']
+            dose = '(' + '|'.join(_d for _d in _dose) + ')' if _dose else ''
+            if generic and brand:
+                _base = generic + ' [' + brand + ']'
+            elif generic:
+                _base = generic
+            elif brand:
+                _base = brand
+            else:
+                _base = ''
+            full_name = ' '.join([_base, dose, form]).upper()
+            _list_expire = datetime.strptime(ndc_data[
+                                                 'listing_expiration_date' if 'listing_expiration_date' in _r_keys else 'marketing_end_date'],
+                                             '%Y%m%d')
+            _d = datetime.today()
+            status = 'valid' if _list_expire > _d else 'expired'
+            _r = {'ndc': product_ndc, 'name': full_name, 'status': status}
+        except KeyError:
+            _r = None
+            smores_error(self.get_e('2'), '', logger=APIlog)
+        else:
+            return _r
 
     def validate(self, ndc):
         return True if self.get_ndc_base(ndc) is not None else False
@@ -603,231 +606,122 @@ class openFDADevice(openFDA):
 
 class UMLS(SMORESapi):
     requests_cache.install_cache(str(SMORESapi.cache_base.joinpath('umls_cache').absolute()),
-                                backend='sqlite',
-                                expire_after=SMORESapi.expire_after)
+                                 backend='sqlite',
+                                 expire_after=SMORESapi.expire_after)
 
-    def __init__(self, delay=100):
+    def __init__(self, apikey=None, authuser=None, authpwd=None):
         super(UMLS, self).__init__()
-        self.auth_url = 'https://utslogin.nlm.nih.gov'
-        self.auth_endpoints = {'apikey': '/cas/v1/api-key', 'user': '/cas/v1/tickets/'}
         self.api_url = 'https://uts-ws.nlm.nih.gov/rest/'
-        self.st_service = 'https://utslogin.nlm.nih.gov/cas/v1/tickets/'
-        self.TGT = Authenticate(self.auth_url, self.auth_endpoints)
+        self.auth_uri = 'https://utslogin.nlm.nih.gov/'
+        self.auth_endpoints = {'apikey': 'cas/v1/api-key', 'user': 'cas/v1/tickets/'}
+        self.auth_client = Authenticate(self.auth_uri, self.auth_endpoints, apikey, authuser, authpwd)
+        self.st_service = 'http://umlsks.nlm.nih.gov'
+        self.valid_codesets = util.UMLS_VALID_SRCS.keys()
         self.endpoints = {
             'STATUS': {
-                'base': 'content/current/source/*SRC*/*CODE*?ticket=*ticket*',
-                'payload': {'regex': ['ticket', 'SRC']}
+                'base': 'content/current/*SRC*/*CODE*',
+                'payload': {'ticket': '', 'regex': ['SRC']}
             },
             'CROSSWALK': {
-                'base': 'crosswalk/current/source/*SRC*/*CODE*?ticket=*ticket*&targetSource=*target_sys*',
-                'payload': {'regex': ['ticket', 'SRC', 'target_sys']}
+                'base': 'crosswalk/current/source/*SRC*/*CODE*',
+                'payload': {'targetSource': '', 'ticket': '', 'regex': ['SRC']}
             },
-            'CUI': {
-                'base': 'content/current/CUI/*CODE*/atoms?ticket=*ticket*',
-                'payload': {'regex': ['ticket']}
+            'CUI_LOOKUP': {
+                'base': 'search/2019AA',
+                'payload': {
+                            'ticket': '', 'string': '', 'sabs':'', 'searchType': '', 'inputType': ''}
             }
         }
 
-    ''' PARAMETERS : sourcesys_code: source code from the system that you are attempting to crosswalk from
-                     Source_sys: Abbreviation of source system that the code is from
-                     target_sys: Abbreviation of target system that the code should be converted to 
+    def get_st(self):
+        return self.auth_client.get_service_ticket(self.st_service)
 
-        OUTPUTS: JSON object including the name of the mediaction/disease in UMLS and the code representation for it
-        NOTE:  UMLS, SNOMEDCT_US, RXNORM, HCPT. CPT or NDC are officially supported but other conversions may work'''
+    def get_umls_cui(self, cui, src:str='CUI', search_type:str='exact'):
+        _opts = {'ticket': self.get_st(),
+                 'string': cui,
+                 'sabs': src,
+                 'searchType': search_type,
+                 'inputType': 'sourceUi'}
+        success, response, api_url = self.call_api('CUI_LOOKUP', cui, _opts)
+        if success and response is not None:
+            try:
+                umls_cui = [atomCluster['ui'] for atomCluster in response['result']['results']]
+            except KeyError or IndexError:
+                smores_error(self.get_e('1'), api_url, logger=APIlog)
+                return False, None
+            else:
+                return True, umls_cui
 
-    def crosswalk_UMLS(self, sourcesys_code, source_sys, target_sys):
-        session = Session()
-        source_sys = source_sys.upper()
-        target_sys =target_sys.upper()
-        if source_sys not in ['UMLS', 'SNOMEDCT_US','RXNORM','NDC','CPT','HCPT'] or target_sys not in ['UMLS', 'SNOMEDCT_US','RXNORM','NDC', 'CPT', 'HCPT']:
-            print('Code System entered may not be valid: Attempting to crosswalk')
-
-        SGT = get_service_ticket(self.auth_url, self.st_service, self.TGT)
-        # Supressing Errors from Smores_Error because we know this may give us a 404 response most of the time (renabled after)
-        # As UMLS returns a 404 when the requested code is not found within the UMLS
-        sys.stderr = open(os.devnull, "w")
-        success, response, api_url = self.call_api('CROSSWALK', sourcesys_code, {'ticket': SGT ,'SRC' : source_sys, 'target_sys' : target_sys})
-        sys.stderr = sys.__stderr__
-        if success:
-            jsonObj1 = response.get("result")
-            numofResults = len(jsonObj1)
-            listofterms = [];
-            for x in range(0, numofResults):
-                temp = {
-                    'name': jsonObj1[x].get("name"),
-                    'ui': jsonObj1[x].get("ui")
-                }
-                listofterms.append(temp)
-            return (listofterms)
+    def get_cui_base(self, cui, src:str='CUI'):
+        if src.upper() in self.valid_codesets.keys() or src == 'CUI':
+            if src != 'CUI':
+                src = 'source/'+src
+            _opts = {'ticket': self.get_st(), 'SRC': src}
+            success, response, api_url = self.call_api('STATUS', cui, _opts)
+            if success and response is not None:
+                try:
+                    cui_base = {}
+                    cui_base['status'] = 'ACTIVE' if not response['result']['obsolete'] else 'OBSOLETE'
+                    cui_base['name'] = response['result']['name']
+                except KeyError or IndexError:
+                    smores_error(self.get_e('1'), api_url, logger=APIlog)
+                    return False, None
+                else:
+                    return True, cui_base
+            return success, response
         else:
-            # if the intial Crosswalk returns nothing then we will try alternate API's/methods to try to get a code that works
-            if source_sys == 'RXNORM':
-                if target_sys == "SNOMEDCT_US":
-                    rxn = RXNAV()
-                    JSONobj2 = rxn.get_rxcui_ingredients(sourcesys_code)['IN']
-                    numofObject = len(JSONobj2)
-                    listofterms = [];
-                    for x in range(0, numofObject):
-                        umls_code = JSONobj2[x]['rxcui']
-                        new_sourcesys_code = umls_code
-                        SGT = get_service_ticket(self.auth_url, self.st_service, self.TGT)
-                        success, response, api_url = self.call_api('CROSSWALK', new_sourcesys_code, {'ticket': SGT, 'SRC': source_sys, 'target_sys': target_sys})
-                        temp = {
-                            'name': response.get("result")[0].get("name"),
-                            'ui': response.get("result")[0].get("ui")
-                        }
-                        listofterms.append(temp)
-                    return (listofterms)
-                elif target_sys == "NDC":
-                    # searching the openFDA API instead of the UMLS as UMLS does not include NDC
-                    response = session.get(
-                        url='https://api.fda.gov/drug/ndc.json?search=openfda.rxcui:' + sourcesys_code
-                    )
-                    jsonObj3 = json.loads(response.text).get("results")
-                    numofResults = len(jsonObj3);
-                    listofterms = [];
-                    for x in range(0, numofResults):
-                        temp = {
-                            'name': jsonObj3[x].get("generic_name"),
-                            'ui': jsonObj3[x].get("product_ndc")
-                        }
-                        listofterms.append(temp)
-                    return (listofterms)
-            elif source_sys == "NDC":
-                # if the source system is NDC then we will use the openFDA to get the RXnorm codes and use those to crosswalk
-                if target_sys == "RXNORM":
-                    fda = openFDA()
-                    results1 = fda.get_ndc_rxnorm(sourcesys_code)
-                    numofObject = len(results1)
-                    listofterms = [];
-                    for x in range(0, numofObject):
-                        umls_code = results1[x]
-                        new_sourcesys_code = umls_code
-                        SGT = get_service_ticket(self.auth_url, self.st_service, self.TGT)
-                        success, response, api_url = self.call_api('STATUS', new_sourcesys_code, {'ticket': SGT, 'SRC': target_sys})
-                        if success:
-                            temp = {
-                                'name': response.get('result').get('name'),
-                                'ui': response.get('result').get('ui')
-                            }
-                            listofterms.append(temp)
-                    return (listofterms)
-                elif target_sys == "SNOMEDCT_US":
-                    fda = openFDA()
-                    results2 = fda.get_ndc_rxnorm(sourcesys_code)
-                    numofObject = len(results2)
-                    listofterms = [];
-                    for x in range(0, numofObject):
-                        umls_code = results2[x]
-                        new_sourcesys_code = umls_code
-                        SGT = get_service_ticket(self.auth_url, self.st_service, self.TGT)
-                        #supressing errors because we expect this call to return a 404 response when the code is not searchable
-                        sys.stderr = open(os.devnull, "w")
-                        success, response, api_url = self.call_api('CROSSWALK', new_sourcesys_code, {'ticket': SGT, 'SRC': 'RXNORM', 'target_sys': target_sys})
-                        sys.stderr = sys.__stderr__
-                        if success:
-                            temp = {
-                                'name': response.get("result")[0].get("name"),
-                                'ui': response.get("result")[0].get("ui")
-                            }
-                            listofterms.append(temp)
-                    return (listofterms)
-            elif source_sys == "SNOMEDCT_US":
-                if target_sys == "NDC":
-                    # because UMLS does not support NDC we first search for the RXNORM code equivalent then run that
-                    # through the OpenFDA API so that we can convert to NDC
-                    SGT = get_service_ticket(self.auth_url, self.st_service, self.TGT)
-                    sys.stderr = open(os.devnull, "w")
-                    success, response, api_url = self.call_api('CROSSWALK', sourcesys_code, {'ticket': SGT, 'SRC': source_sys, 'target_sys': 'RXNORM'})
-                    sys.stderr = sys.__stderr__
-                    jsonObj = response.get("result")
-                    numofResults = len(jsonObj);
-                    for x in range(0,numofResults):
-                        new_code = jsonObj[x].get('ui')
-                        response = session.get(
-                            url='https://api.fda.gov/drug/ndc.json?search=openfda.rxcui:' + new_code
-                        )
-                        jsonObj3 = json.loads(response.text).get("results")
-                        numofResults = len(jsonObj3);
-                        listofterms = [];
-                        for x in range(0, numofResults):
-                            temp = {
-                                'name': jsonObj3[x].get("generic_name"),
-                                'ui': jsonObj3[x].get("product_ndc")
-                            }
-                            listofterms.append(temp)
-                        return (listofterms)
+            smores_error(self.get_e('4'), self.api_url, logger=APIlog)
+            return False, None
 
+    def get_cui_status(self, cui, src:str='CUI'):
+        UMLS_VALID_SRCS = {
+            'MED-RT': 'Medication Reference Terminology',
+            'NDFRT': 'National Drug File - Reference Terminology',
+            'RXNORM': 'RXNORM',
+            'SNOMEDCT_US': 'US Edition of SNOMED CT',
+            'CPT': 'Current Procedural Terminology',
+            'HCPCS': 'Healthcare Common Procedure Coding System'
+        }
 
-            elif source_sys == "UMLS":
-                # if the source system is a UMLs CUI then we must use a different API endpoint to access the data.
-                SGT = get_service_ticket(self.auth_url, self.st_service, self.TGT)
-                success, response, api_url = self.call_api('CUI', sourcesys_code, {'ticket': SGT})
-                results3 = response.get('result');
-                listofterms = [];
-                for x in range(0, len(results3)):
-                    if results3[x].get('rootSource') == target_sys:
-                        indexofcode = results3[x].get('code').index(target_sys, 0)
-                        indexofcode = indexofcode + len(target_sys) + 1
-                        temp = {
-                            'name': results3[x].get('name'),
-                            'ui': results3[x].get('code')[indexofcode:]
-                        }
-                        listofterms.append(temp)
-                return (listofterms)
-        return [{'name': "No Results Found", 'ui': 'No Results Found'}]
+        if src.upper() in self.valid_codesets.keys() or src == 'CUI':
+            if src != 'CUI':
+                src = 'source/'+src
+            _opts = {'ticket': self.get_st(), 'SRC': src}
+            success, response, api_url = self.call_api('STATUS', cui, _opts)
+            if success and response is not None:
+                try:
+                    cui_status = 'ACTIVE' if not response['result']['obsolete'] else 'OBSOLETE'
+                except KeyError or IndexError:
+                    smores_error(self.get_e('1'), api_url, logger=APIlog)
+                    return False, None
+                else:
+                    return True, cui_status
+            return success, response
+        else:
+            smores_error(self.get_e('4'), self.api_url, logger=APIlog)
+            return False, None
 
-    '''Checks to ensure that the code that you are looking up is not obsolete if it is not obsolete the the function returns true
-     OUPUT: Returns true is the code is a valid code in the UMLS otherwise it returns False'''
+    def get_crosswalk_cui(self, cui, src, target_src):
+        _opts = {'ticket': self.get_st(), 'SRC': src, 'targetSource': target_src}
+        if src.upper() in self.valid_codesets.keys() and target_src.upper() in self.valid_codesets.keys():
+            success, response, api_url = self.call_api('CROSSWALK', cui, _opts)
+            if success and response is not None:
+                try:
+                    cui_crosswalk = [{'ui': atomCluster['ui'],
+                                      'name': atomCluster['name'],
+                                      'status': 'ACTIVE' if not atomCluster['obsolete'] else 'OBSOLETE',
+                                      'cui': self.get_umls_cui(atomCluster['ui'], atomCluster['rootSource'], 'exact'),
+                                      } for atomCluster in response['result']]
+                    _r = True
+                except KeyError or IndexError:
+                    smores_error(self.get_e('1'), api_url, logger=APIlog)
+                    return False, None
+                else:
+                    return _r, cui_crosswalk
 
-    def validate(self, sourcesys_code, source_sys):
-        SGT = get_service_ticket(self.auth_url, self.st_service, self.TGT)
-        sys.stderr = open(os.devnull, "w")
-        success, response, api_url = self.call_api('STATUS', sourcesys_code, {'ticket': SGT, 'SRC': source_sys})
-        sys.stderr = sys.__stderr__
-        if success:
-            return bool(response.get("result").get('obsolete')) == False
+    def validate(self, cui, src:str='CUI'):
+        response, status = self.get_cui_status(cui, src)
+        if response and status is not None:
+            return True
         else:
             return False
-
-    ''' Checks to see if the code that you have entered is a currently under use or whether it is obsolete'''
-
-    def get_code_status(self, sourcesys_code, source_sys):
-        SGT = get_service_ticket(self.auth_url, self.st_service, self.TGT)
-        session =Session()
-        response = session.get(
-            url='https://uts-ws.nlm.nih.gov/rest/content/current/source/' + source_sys + '/' + sourcesys_code + '/attributes?ticket=' + SGT
-        )
-        # this first call checks to see if the code has attributes associated with it (so that we can check the active flag
-        # if it does not then we will fall back on checking whether or not the code is obsolete or not
-        # to
-        if response.status_code == 200:
-            jsonObj = json.loads(response.text)
-            if bool(jsonObj.get("result")[0].get('value')) == 1:
-                return "Active Code"
-            else:
-                return "Inactive Code"
-        else:
-            umls =UMLS()
-            flag = umls.validate(sourcesys_code, source_sys)
-            if flag:
-                return "Active Code"
-            else:
-                return "Code Not Found in UMLS"
-
-
-
-    '''Gets SNOMED Code from the UMLS by its ID
-    OUTPUT: '''
-
-    def get_snomed_by_id(self, sourcesys_code):
-        SGT = get_service_ticket(self.auth_url, self.st_service, self.TGT)
-        sys.stderr = open(os.devnull, "w")
-        success, response, api_url = self.call_api('STATUS', sourcesys_code, {'ticket': SGT, 'SRC': 'SNOMEDCT_US'})
-        sys.stderr = sys.__stderr__
-        jsonObj1 = response.get("result")
-        temp = {
-            'name': jsonObj1.get("name"),
-            'ui': jsonObj1.get("ui")
-        }
-        return temp

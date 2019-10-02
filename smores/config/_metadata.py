@@ -1,5 +1,5 @@
 name="Synergistic Medication Organizer for RxNorm and Extras"
-version="0.10.6"
+version="0.11.1"
 author="Robert Bradford"
 author_email="rbrad@med.unc.edu"
 description="SMOREs - Synergistic Medication Organizer for RxNorm and Extras : " \

@@ -14,11 +14,11 @@ RXNORM_TTY_SUPPORT_DICT = {'SBD': {'name': 'Semantic Branded Drug'},
     'BN': {'name': 'Branded Name'},
     'SBDC': {'name': 'Semantic Branded Drug Component'},
     'SCDC': {'name': 'Semantic Clinical Drug Component'},
-    'DF':{'name':''},
-    'SCDF':{'name':''},
-    'SBDF':{'name':''},
-    'GPCK':{'name':''},
-    'BPCK':{'name':''}
+    'DF': {'name': 'Dose Form'},
+    'SCDF': {'name': ''},
+    'SBDF': {'name': ''},
+    'GPCK': {'name': ''},
+    'BPCK': {'name': ''}
 }
 
 FHIR_CODESET_SYSTEMS = {
@@ -105,12 +105,10 @@ def get_util_base(type):
     _prj = Path.cwd()
     if 'smores' in _prj.parts:
         while True:
-            ######## pikovach added this to correct for path resolution issues ##############################################
             head, tail = os.path.split(_prj)
             if(tail == 'smores'):
                 _prj=Path.cwd()
                 return _prj
-            #################################################################################################################
             _par = _prj.parents[i]
             head, tail = os.path.split(_par)
             if tail == 'smores':
@@ -143,7 +141,7 @@ def get_api_key(API:str):
 
     conf = read_config_value('API_KEY')
     key = conf[config_keys[API].lower()]
-    validated_key = key if key.upper() != 'NONE' and len(key) > 1 else None
+    validated_key = key if key.upper() != 'NONE' and len(key) > 1 else 'NONE'
     return validated_key
 
 
