@@ -5,6 +5,7 @@ import logging
 import smores.medicationdictionary as md
 from smores.api import openFDA, RXNAV, RXNDC, openFDADevice
 from smores.utility.errors import smores_error
+from typing import Union
 import smores.utility.util as util
 
 smoresLog = logging.getLogger(__name__)
@@ -69,6 +70,24 @@ def get_rxcui(cui, valid=None, idType=None):
         else:
             return RxCUI(cui, valid)
 
+def get_med_obj(cui: Union[list, str], idType:str, valid=None):
+
+    smoresLog.debug(cui)
+    # Process input list of cuis, recursive call
+    if isinstance(cui, list):
+        return {idType: get_med_obj(_c, idType, valid) for _c in cui}
+    # Process individual rxcui input
+    else:
+        cui_dict = md.get_med_dict_by_src(idType)
+        smoresLog.debug('RxNorm Med List Keys: %s', str(cui_dict.med_list.keys()))
+        if str(cui) in cui_dict.med_list.keys():
+            smoresLog.debug('Key Already Exists: %s', str(cui))
+            return cui_dict.med_list[cui]
+        elif idType is not None:
+            if idType in CUI_OBJECT_MAP.keys():
+                return CUI_OBJECT_MAP[idType](cui)
+            else:
+                return Medication(cui)
 
 def getValidTypes():
     return RXNAV.RXNAV_VALID_IDS
@@ -79,8 +98,10 @@ class Medication:
     med_id_list = {'GENERIC': {}}
     api = None
 
-    def __init__(self, input_key: str):
+    def __init__(self, input_key: str, source:str='SYSTEM'):
+        smoresLog.debug('Adding medication {0} from source {1}'.format(input_key, source))
         self.sys_id = int(next(Medication.id_count))
+        self.valid = True
         self.cui = input_key
         self.dictionaries = {}
         self.name = None
@@ -151,6 +172,15 @@ class Medication:
             smores_error('#Mx002.1')
         return attr
 
+    def set_property(self, prop, value):
+        if hasattr(self, prop):
+            self.__setattr__(prop, value)
+        elif prop == 'str':
+            # This is a translation of an API variance between calls
+            self.__setattr__('name', value)
+        else:
+            raise Exception('"{0}" property does not exist on {1} Object!'.format)
+
     def add_details(self, details:dict):
         for det, val in details.items():
             if hasattr(self, det):
@@ -176,9 +206,8 @@ class Medication:
 class LocalMed(Medication):
     api = None
 
-    def __init__(self, input_key=None, source=None, name=None, parent_dict=None, is_generic=False):
+    def __init__(self, input_key=None, source=None, parent_dict=None, is_generic=False):
         super(LocalMed, self).__init__(input_key)
-        smoresLog.debug('Adding medication {0} from source {1}'.format(input_key, source))
         self.source = source
         self.id_links = {}
         self.parent_med_dict = md.get_med_dict_by_src(self.source) if parent_dict is None else parent_dict
@@ -214,60 +243,32 @@ class LocalMed(Medication):
             smoresLog.debug('In CUI Type Check: LIST - Recursive Call')
             for nest_cui in in_cui:
                 invalid_cui += self.add_cui(nest_cui, cui_type)
+            return invalid_cui
         elif type(in_cui) is dict:
             smoresLog.debug('In CUI Type Check: DICT - Recursive Call')
             for cui, obj in in_cui.items():
                 invalid_cui += self.add_cui(obj, cui_type)
-        elif isinstance(in_cui, RxCUI):
-            smoresLog.debug('In CUI Type Check: RXCUI.Object')
-            cui_type='RXNORM'
-            if in_cui.check_ingredient():
-                if not self.has_dict('ING'):
-                    self.add_dict('ING', self.sys_id)
-                cui_dict = self.get_dict(src='ING')
+            return invalid_cui
+        elif isinstance(in_cui, RxCUI) or isinstance(in_cui, NDC):
+            smoresLog.debug(type(cui_type))
+            med_obj = in_cui
+            if isinstance(in_cui, RxCUI) and in_cui.check_ingredient():
+                cui_type = 'ING'
                 self.has_ingredients = True
             else:
-                if not self.has_dict(cui_type):
-                    self.add_dict(cui_type, self.sys_id)
-                cui_dict = self.get_dict(src=cui_type)
-            cui_dict.add_med_with_id(in_cui, in_cui.cui)
-            self.has_rxcui = True
-            invalid_cui += 1 if not in_cui.valid else 0
-        elif isinstance(in_cui, NDC):
-            smoresLog.debug('In CUI Type Check: NDC.Object')
-            if not self.has_dict('NDC'):
-                self.add_dict('NDC', self.sys_id)
-            cui_dict = self.get_dict('NDC')
-            cui_dict.add_med_with_id(in_cui, in_cui.local_id)
-            invalid_cui += 1 if not in_cui.valid else 0
-        elif type(in_cui) is str and cui_type in ['RXNORM','RXCUI']:
-            cui_type='RXNORM'
-            smoresLog.debug('In CUI Type Check: RXNORM, RXCUI')
-            rxcui_obj = get_rxcui(in_cui)
-            if rxcui_obj.check_ingredient():
-                if not self.has_dict('ING'):
-                    self.add_dict('ING', self.sys_id)
-                cui_dict = self.get_dict('ING')
-                self.has_ingredients = True
-            else:
-                if not self.has_dict(cui_type):
-                    self.add_dict(cui_type, self.sys_id)
-                cui_dict = self.get_dict(cui_type)
-            cui_dict.add_med_with_id(rxcui_obj, in_cui)
-            self.has_rxcui = True
-            invalid_cui += 1 if not rxcui_obj.valid else 0
-        elif type(in_cui) is str and cui_type == 'NDC':
-            smoresLog.debug('In CUI Type Check: Generic')
-            if not self.has_dict('NDC'):
-                self.add_dict('NDC', self.sys_id)
-            cui_dict = self.get_dict('NDC')
-            ndc_obj = NDC(in_cui)
-            if cui_name is not None:
-                ndc_obj.set_name(cui_name)
-            cui_dict.add_med_with_id(ndc_obj, in_cui)
-            invalid_cui += 1 if not ndc_obj.valid else 0
+                cui_type = str(type(in_cui)) if cui_type is None else cui_type
+        elif type(in_cui) is str and cui_type in util.OPTIONS_CUI_TYPES:
+            med_obj = get_med_obj(in_cui, cui_type)
         else:
             smores_error('#Mx001.2')
+            return 1
+
+        if not self.has_dict(cui_type):
+            self.add_dict(cui_type, self.sys_id)
+        cui_dict = self.get_dict(src=cui_type)
+        cui_dict.add_med_with_id(med_obj, med_obj.cui)
+        invalid_cui += 1 if not med_obj.valid else 0
+
         return invalid_cui
 
     def add_json(self, json):
@@ -314,7 +315,7 @@ class LocalMed(Medication):
 
     # Lookup specific term types of RxCUI's for a medication that have already been identified.
     # Will not perform a new API search
-    # Returns
+    # Returns the TTY for the provided rxcui
     def get_rxcui_by_tty(self, tty):
         return self.get_dict('RXNORM').get_med_by_property('tty', tty)
 
@@ -480,12 +481,40 @@ class NDC(Medication):
                 self.valid = True
                 self.name = ndc_base['name']
                 self.status = ndc_base['status']
+                self.unii = ndc_base['unii'] if 'unii' in ndc_base.keys() else None
             else:
                 self.valid = False
 
         self.parent_med_dict = md.get_med_dict_by_src('NDC')
         self.parent_med_dict.add_med_with_id(self, self.cui)
         self.fhir_valid = True
+
+    def set_status(self, in_status):
+        if in_status is not None:
+            self.status = in_status.upper()
+        else:
+            # TODO This error call needs to be refactored
+            _error = smores_error('#Bx001.3')
+            smoresLog.error(str(_error) + '\n')
+
+    def get_status(self):
+        if self.status is None and self.valid is None:
+            valid, status = self.api.get_cui_status(self.cui)
+            if valid:
+                self.set_status(status)
+                return self.status
+            else:
+                # TODO This error call needs to be refactored
+                _error = smores_error('#Bx001.3')
+                smoresLog.warning(_error + '\n')
+        else:
+            if not self.valid:
+                # TODO This error call needs to be refactored
+                _error = smores_error('#Bx001.3')
+                smoresLog.warning(_error + '\n')
+                return None
+            else:
+                return self.status
 
     def get_linked_cui(self, cui_type:str):
         linked = []
@@ -500,7 +529,20 @@ class NDC(Medication):
                     _rxc = get_rxcui(rxcui)
                     rxc_dict.add_med_with_id(_rxc, rxcui)
                     linked.append(_rxc)
+        elif cui_type == 'FDA':
+            return [self.unii if hasattr(self, 'unii') else None]
+        elif cui_type == 'UMLS':
+            return [self.umls_cui if hasattr(self, 'umls_cui') else None]
         return linked
+
+    def get_print_base(self):
+        _print = {
+            'NDC': self.cui,
+            'name': self.get_name(),
+            'status': self.get_status(),
+            'unii': self.get_linked_cui('FDA')
+        }
+        return _print
 
 
 class RxCUI(Medication):
@@ -554,6 +596,7 @@ class RxCUI(Medication):
             self.tty = in_tty.upper()
             self.is_ingredient = self.check_ingredient()
         else:
+            # TODO This error call needs to be refactored
             _error = smores_error('#Bx001.2')
             smoresLog.error(str(_error) + '\n')
 
@@ -566,20 +609,23 @@ class RxCUI(Medication):
         if in_status is not None:
             self.status = in_status.upper()
         else:
+            # TODO This error call needs to be refactored
             _error = smores_error('#Bx001.3')
             smoresLog.error(str(_error) + '\n')
 
     def get_status(self):
-        if self.status is None:
+        if self.status is None and self.valid is None:
             valid, status = self.api.get_cui_status(self.cui)
             if valid:
                 self.set_status(status)
                 return self.status
             else:
+                # TODO This error call needs to be refactored
                 _error = smores_error('#Bx001.3')
                 smoresLog.warning(_error + '\n')
         else:
             if not self.valid:
+                # TODO This error call needs to be refactored
                 _error = smores_error('#Bx001.3')
                 smoresLog.warning(_error + '\n')
                 return None
@@ -655,16 +701,6 @@ class RxCUI(Medication):
                         self.set_tty(history['tty'])
         return linked
 
-    # TODO Move to super()
-    def set_property(self, prop, value):
-        if hasattr(self, prop):
-            self.__setattr__(prop, value)
-        elif prop == 'str':
-            # This is a translation of an API variance between calls
-            self.__setattr__('name', value)
-        else:
-            raise Exception('"{0}" property does not exist on {1} Object!'.format)
-
     def check_tty(self, in_tty):
         format_tty = in_tty.upper()
         if format_tty in get_RXNORM_tty_dict():
@@ -721,3 +757,5 @@ class RxCUI(Medication):
     #         _print = flatten_dict(_print)
     #
     #     return _print
+
+CUI_OBJECT_MAP = {'NDC': NDC, 'RXNORM': RxCUI, 'GENERIC': Medication, 'LOCAL': LocalMed}

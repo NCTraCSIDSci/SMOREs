@@ -18,7 +18,7 @@ except ImportError:
     colored = None
 
 smoresLog = logging.getLogger(__name__)
-_OPTIONS_RXNSTATUS = util.OPTIONS_RXNSTATUS
+_OPTIONS_RXNSTATUS = util.OPTIONS_CUI_TYPES
 
 
 def console_colorize(string, color):
@@ -53,10 +53,10 @@ class smoresCLI(cmd.Cmd):
         self.__grant__ = _meta['grant']
         self.intro = console_colorize(
             'Welcome to the CAMP-FHIR Synergistic Medication Organizer for RxNorm and Extras!', 'green') \
-                     + '\n' + 'Release ' + console_colorize(self.__version__, 'yellow') + ' \n ' \
-                                                                                          'Development of this tool is supported by ' + self.__grant__ + ' \n\n ' \
-                                                                                                                                                         'Type ' + console_colorize(
-            'help', 'red') + ' or ' + console_colorize('?', 'red') + ' to list commands.\n '
+            + '\n' + 'Release ' + console_colorize(self.__version__, 'yellow') \
+            + ' \n ' + 'Development of this tool is supported by ' + self.__grant__ \
+            + ' \n\n ' + 'Type ' + console_colorize('help', 'red') + ' or ' \
+            + console_colorize('?', 'red') + ' to list commands.\n '
         self.inputs = {'loaded': False, 'files': {}, 'count': 0}
         self.prompt = console_colorize('>', 'yellow')
         self.errors = {}
@@ -82,6 +82,12 @@ class smoresCLI(cmd.Cmd):
             return False
 
     def validate_args(self, in_args, cmd_call):
+        """
+        Validates the user provided input for a command call. Asks relevant questions when not
+        enough information is provided from command line.
+        :param in_args : input arguments from command line, can be empty or have up to 2 values depnding on the process
+        :param cmd_call : Process we are attempting to perform
+        """
         valid_1, valid_2 = None, None
 
         if len(in_args) > 0 and type(in_args) is not list:
@@ -95,7 +101,7 @@ class smoresCLI(cmd.Cmd):
 
         if cmd_call in ['default']:
             while True:
-                if len(args) == 2:
+                if len(args) >= 2 and len(args) <= 3:
                     input_type = args[1].upper()
                 else:
                     input_type = input("What type of id is '{0}'?  [LOCAL/RXCUI/NDC/SNOMED]".format(args[0])).upper()

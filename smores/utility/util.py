@@ -5,7 +5,8 @@ import sys, os
 import re
 from smores.utility.errors import smores_error
 
-OPTIONS_RXNSTATUS = ['LOCAL', 'RXCUI', 'NDC', 'SNOMED','CPT']
+OPTIONS_CUI_TYPES = ['RXNORM', 'NDC', 'SNOMED', 'CPT', 'UMLS', 'FDA']
+
 RXNORM_TTY_SUPPORT_DICT = {'SBD': {'name': 'Semantic Branded Drug'},
     'SCD': {'name': 'Semantic Clinical Drug'},
     'IN': {'name': 'Ingredient'},

@@ -228,7 +228,7 @@ class openFDA(SMORESapi):
             _r_keys = ndc_data.keys()
             if len(_r_keys) == 0:
                 return None
-            _r, product_ndc, generic, brand, dose, form = (None for i in range(6))
+            _r, product_ndc, generic, brand, dose, form, unii = (None for i in range(7))
 
             product_ndc = ndc_data['product_ndc'] if 'product_ndc' in _r_keys else False
             generic = ndc_data['generic_name'] if 'generic_name' in _r_keys else False
@@ -237,6 +237,7 @@ class openFDA(SMORESapi):
                      ndc_data['active_ingredients']] if 'active_ingredients' in _r_keys else False
             form = ndc_data['dosage_form']
             dose = '(' + '|'.join(_d for _d in _dose) + ')' if _dose else ''
+            unii = ndc_data['openfda']['unii']
             if generic and brand:
                 _base = generic + ' [' + brand + ']'
             elif generic:
@@ -352,7 +353,7 @@ class RXNAV(SMORESapi):
                     _r = True
 
             except KeyError or IndexError:
-                smores_error(self.get_e(e_index[cui_status.lower()]), api_url, logger=APIlog)
+                smores_error(self.get_e(e_index[cui_status.lower()] if cui_status is not None else '4' ), api_url, logger=APIlog)
                 return False, None
             else:
                 return _r, cui_status
@@ -653,7 +654,7 @@ class UMLS(SMORESapi):
                 return True, umls_cui
 
     def get_cui_base(self, cui, src:str='CUI'):
-        if src.upper() in self.valid_codesets.keys() or src == 'CUI':
+        if src.upper() in self.valid_codesets or src == 'CUI':
             if src != 'CUI':
                 src = 'source/'+src
             _opts = {'ticket': self.get_st(), 'SRC': src}
@@ -674,16 +675,7 @@ class UMLS(SMORESapi):
             return False, None
 
     def get_cui_status(self, cui, src:str='CUI'):
-        UMLS_VALID_SRCS = {
-            'MED-RT': 'Medication Reference Terminology',
-            'NDFRT': 'National Drug File - Reference Terminology',
-            'RXNORM': 'RXNORM',
-            'SNOMEDCT_US': 'US Edition of SNOMED CT',
-            'CPT': 'Current Procedural Terminology',
-            'HCPCS': 'Healthcare Common Procedure Coding System'
-        }
-
-        if src.upper() in self.valid_codesets.keys() or src == 'CUI':
+        if src.upper() in self.valid_codesets or src == 'CUI':
             if src != 'CUI':
                 src = 'source/'+src
             _opts = {'ticket': self.get_st(), 'SRC': src}
@@ -703,7 +695,7 @@ class UMLS(SMORESapi):
 
     def get_crosswalk_cui(self, cui, src, target_src):
         _opts = {'ticket': self.get_st(), 'SRC': src, 'targetSource': target_src}
-        if src.upper() in self.valid_codesets.keys() and target_src.upper() in self.valid_codesets.keys():
+        if src.upper() in self.valid_codesets and target_src.upper() in self.valid_codesets:
             success, response, api_url = self.call_api('CROSSWALK', cui, _opts)
             if success and response is not None:
                 try:

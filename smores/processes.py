@@ -45,18 +45,12 @@ def line_read (medkit, input, last_id=None, skip1=True):
         if len(line[i_code_key]) != 0:
             if util.validate_id(line[i_code_key], line[i_code_type_key].upper()):
                 cui_type = line[i_code_type_key].upper()
+                cui_type = 'RXNORM' if cui_type == 'RXCUI' else cui_type
                 # Support for inclusion of local name for local code id's
                 if cui_type == 'LOCAL' and not temp_med.isNameSet():
                     temp_med.set_name(line[i_code_name])
 
-                elif cui_type in ['RXCUI', 'RXNORM']:
-                    rxcui = m.get_rxcui(line[i_code_key])
-                    _e = temp_med.add_cui(rxcui, 'RXNORM')
-                    if _e > 0:
-                        smores_error('#Ax000.1', line[i_local_key])
-                        has_err[line[i_code_key]] = "#Ax000.1"
-
-                elif cui_type == 'NDC':
+                elif cui_type in util.OPTIONS_CUI_TYPES:
                     if i_code_name in line.keys() and len(line[i_code_name]) > 0:
                         _e = temp_med.add_cui(line[i_code_key], cui_type, line[i_code_name])
                     else:
@@ -65,18 +59,6 @@ def line_read (medkit, input, last_id=None, skip1=True):
                         smores_error('#Ax000.1', line[i_local_key])
                         has_err[line[i_code_key]] = "#Ax000.1"
 
-                elif cui_type == 'UMLS':
-                    smoresLog.debug('Code Type Check: UMLS')
-                    # TODO To Be Supported in Later Version
-                    pass
-                elif cui_type == 'CPT':
-                    smoresLog.debug('Code Type Check: CPT')
-                    # TODO To Be Supported in Later Version
-                    pass
-                elif cui_type == 'SNOMED':
-                    smoresLog.debug('Code Type Check: SNOMED')
-                    # TODO To Be Supported in Later Version
-                    pass
         else:
             smores_error('#Ax000.3', line[i_local_key])
             has_err[line[i_code_key]] = "#Ax000.3"
@@ -305,9 +287,13 @@ def run_client_cmd(client_cmd:str, med_id:str=None, med_id_type:str=None, file:s
         return
 
     if file is not None:
+        # If a command has a requirement in order to process without complete failure, check that it has passed
         if this_cmd_requires:
-            if not get_cmd_requirements(client_cmd, file):
+            pass_requires, error = get_cmd_requirements(client_cmd, file)
+            if not pass_requires:
                 print('Command {0} does not meet the requirements needed to execute the command'.format(client_cmd))
+                if error is not None:
+                    print('   Requirements: {0} \n'.format(error))
                 return 0, [], file
         success_count, errors = 0, []
         if file == 'ALL':
@@ -645,9 +631,9 @@ def get_cmd_requirements(cmd:str, input):
         file_cui_types = get_file_cui_types(input)
         if file_cui_types is not None:
             if any(i in ['NDC'] for i in file_cui_types):
-                return True
+                return True, None
             else:
-                return False
+                return False, 'There are no valid CUI types that can be searched for rxnorm codes.'
         else:
             return None
     else:
