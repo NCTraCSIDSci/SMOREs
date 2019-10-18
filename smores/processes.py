@@ -135,7 +135,7 @@ def load_file(input_file:str):
         return True, file_stat
 
 
-def write_file(output_file=None, data=None, iter:int=None, ext:str=None):
+def write_file(output_file=None, data=None, iter:int=0, ext:str=None):
     _default = 'SMORES_output_'+time.strftime("%Y%m%d-%H%M%S")
     if data is None:
         smores_error('#Cx001.5')
@@ -154,7 +154,7 @@ def write_file(output_file=None, data=None, iter:int=None, ext:str=None):
             else:
                 _base = output_file
 
-        if iter is not None:
+        if iter > 0:
             _base = _base + "_" + str(iter)
         _write_file_name = _write_path + _base + "." + _ext
         try:
@@ -166,7 +166,7 @@ def write_file(output_file=None, data=None, iter:int=None, ext:str=None):
             _head_wr = True
             if _ext in ['csv', 'txt']:
                 for row in tqdm(data, total=len(data), unit='rows',
-                                desc='Writing To File {0} '.format(_write_file_name), position=1):
+                                desc='Writing To File {0} '.format(_write_file_name), position=iter):
                     has_list = False
                     for _v in list(row.values()):
                         if type(_v) is list:
@@ -200,7 +200,7 @@ def write_file(output_file=None, data=None, iter:int=None, ext:str=None):
             return False, '#Cx001.2'
 
 
-def process_event(src:Union[MedKit, str], func, display:str, event_restrict=None):
+def process_event(src:Union[MedKit, str], func, display:str, event_restrict=None, args=None):
     '''
 
     :param src:
@@ -223,14 +223,16 @@ def process_event(src:Union[MedKit, str], func, display:str, event_restrict=None
     results = {}
     pbar = tqdm(total=len(med_val_list), desc=display + ' Processing', position=0)
     for _val in med_val_list:
-        _v, _res = func(_val)
+        _v, _res = func(_val) if args is None else func(_val, args)
         if _v:
             _num_valid += 1
             results[_val.cui] = _res
         pbar.update(1)
-    pbar.close()
+    #pbar.close()
 
-    pbar = tqdm(total=_num_valid, desc='Finalizing Results', position=0)
+    #pbar = tqdm(total=_num_valid, desc='Finalizing Results', position=0)
+    pbar.set_description('Finalizing Results')
+    pbar.refresh()
     for med_id, _ans in results.items():
         if _ans is None:
             _error_codes.append('Med:' + str(med_id))
@@ -243,7 +245,7 @@ def process_event(src:Union[MedKit, str], func, display:str, event_restrict=None
         else:
             pass
         _count += 1
-        pbar.update(1)
+        #pbar.update(1)
     pbar.set_description('Complete')
     pbar.close()
     time.sleep(.01)
@@ -252,6 +254,7 @@ def process_event(src:Union[MedKit, str], func, display:str, event_restrict=None
     else:
         smores_error('#Cx004.2')
         return False, None
+
 
 def get_run_call(client_cmd:str='default', opt:str=None):
     client_cmds = {
@@ -316,14 +319,16 @@ def run_client_cmd(client_cmd:str, med_id:str=None, med_id_type:str=None, file:s
             for id, kit in medkits.items():
                 _c, _e = process_event(kit, this_cmd, this_display, this_restriction, args)
                 success_count += _c
-                if len(_e) > 0:
+                if _e is not None and len(_e) > 0:
                     errors = errors + _e if type(_e) is list else errors.append(_e)
                 if num_kits > 1:
                     kits_prog.update(1)
 
         else:
-            medkit = MedKit.get_medkit(file) if not isinstance(file, MedKit) else file
-            success_count, errors = process_event(medkit, this_cmd, this_display, this_restriction)
+            #elif MedKit.src_is_medkit(file):
+            medkit = MedKit.get_medkit(file) if not isinstance(file, MedKit) and MedKit.src_is_medkit(file)else file
+            success_count, errors = process_event(medkit, this_cmd, this_display, this_restriction, args)
+
         return success_count, errors, file
 
     elif med_id is not None and med_id_type is not None:
@@ -464,7 +469,7 @@ def get_rxn_remap(medObj:Union[m.Medication, m.LocalMed, m.RxCUI], api:str='RXNA
         return False, None
 
 
-def get_rxn_history(medObj:m.RxCUI, api:str='RXNAV'):
+def get_rxn_history(rxcObj:m.RxCUI, api:str='RXNAV'):
     '''
     Barebones - Runs history of all medications currently loaded
     # TODO Allow for specific targeting of med_ids
@@ -474,8 +479,11 @@ def get_rxn_history(medObj:m.RxCUI, api:str='RXNAV'):
     :return:
     '''
     if api == 'RXNAV':
-        success = medObj.get_linked_cui('history')
-    return True, None
+        success = rxcObj.get_linked_cui('history')
+    if success:
+        return True, success
+    else:
+        return False, None
 
 
 def run_med_to_json(med_id=None, med_id_type:str=None, file:str=None,
@@ -538,23 +546,25 @@ def run_med_to_json(med_id=None, med_id_type:str=None, file:str=None,
         smores_error('#Kx001.2')
     return
 
-def run_med_to_csv(file:str=None,out_file:str=None, params:dict=None):
+
+def run_med_to_csv(file:str=None, out_file:str=None, params:dict=None):
     '''
     Only supports outputing bundles, not individual meds
     :param file: the target input file to be output to CSV, or ALL
     :param out_file: basename to be used for file outputs, can be None: default name will be used
     :param params: Customization parameters for the CSV output
+        Possible Parameters: codes (codeset to output), ing (include ingredients)
     :param incr: Number of medications to be saved per file (not rows)
     :return:
     '''
     smoresLog.debug('Preparing to generate CSV')
     incr = int(util.read_config_value('OUTPUT_CONF')['file_size_max'])
-    csv_files = {}
-    csv_outputs = params.keys() if params is not None else ''
-    if 'detail' in csv_outputs:
-        for _d in params['detail'].values():
-            base_filename, ext = process_filename(_d['type'])
-            csv_files[_d] = {'file': base_filename, 'ext': ext, 'detail': _d}
+    # csv_files = {}
+    # csv_outputs = params.keys() if params is not None else ''
+    # if 'detail' in csv_outputs:
+    #     for _d in params['detail'].values():
+    #         base_filename, ext = process_filename(_d['type'])
+    #         csv_files[_d] = {'file': base_filename, 'ext': ext, 'detail': _d}
 
     if file is not None:
         kits = MedKit.get_medkit(file)
@@ -562,35 +572,51 @@ def run_med_to_csv(file:str=None,out_file:str=None, params:dict=None):
             i=1
             for file, kit in kits.items():
                 _file, ext = process_filename(out_file=out_file, info_type=kit.file_name.split('.')[0])
-                save_csv_bundle(kit.m_dict, _file, incr=incr, ext=ext)
+                save_csv_bundle(kit.m_dict, _file, incr=incr, ext=ext, csv_detail=params)
                 i += 1
         else:
             _file, ext = process_filename(out_file=out_file, info_type=kits.file_name.split('.')[0])
-            save_csv_bundle(kits.m_dict, _file, incr=incr, ext=ext)
+            save_csv_bundle(kits.m_dict, _file, incr=incr, ext=ext, csv_detail=params)
 
     else:
         smores_error('#Kx001.2')
     return
 
 
-def run_dict_to_csv(dict:str, out_file:str=None, params=None):
-    csv_details = {'cui': {'src': dict}}
+def run_dict_to_csv(src_dict:str, out_file:str=None, params=None):
+    """
+    Retrieves the corresponding MedicationDictionary for an input src and saves to CSV
+    :param src_dict: Name of the src to be saved. Will identify the medication "bundle" to be saved
+    :param out_file: output filename specified by the user. Def None results in default name generated
+    :param params: Additional output parameters to be applied in building the csv
+    :return: Function call to save the bundle of medications
+    """
     incr = int(util.read_config_value('OUTPUT_CONF')['file_size_max'])
-    dict_to_save = md.get_med_dict_by_src(dict)
-    _file, ext = process_filename(out_file=out_file, info_type=dict)
-    return save_csv_bundle(dict_to_save, _file, incr, csv_details, ext=ext)
+    dict_to_save = md.get_med_dict_by_src(src_dict)
+    _file, ext = process_filename(out_file=out_file, info_type=src_dict)
+    return save_csv_bundle(dict_to_save, _file, incr, params, ext=ext)
 
 
-def save_csv_bundle(in_dict:md.MedicationDictionary, out_file:str, incr:int, csv_detail=None, ext='csv'):
+def save_csv_bundle(in_dict:md.MedicationDictionary, out_file:str, incr:int, csv_detail=None, **kwargs):
+    """
+    Takes an input MedicationDictionary object and retrieves the output print format for the included medication objects
+    :param in_dict: Input MedicationDictionary to be saved
+    :param out_file: output filename specified by the user. Def None results in default name generated
+    :param incr: Number of medications to be included in each file. Prevent rows for a single medication from being
+        spread across multiple files
+    :param csv_detail: Additional specifications regarding the format of the output CSV
+    :return:
+    """
     _total = in_dict.get_med_count()
     _iters = int(math.ceil(_total / incr)) if incr is not None else 1
     _med_list = list(in_dict.med_list.values())
-    if csv_detail is None:
-        _d = {'cui': {'src': 'RXNORM'}, 'ing': {}}
+    if csv_detail['default']:
+        # Default save format is to retrieve all cui's from the RxNorm code set
+        _d = {'cui': {'src': 'RXNORM', 'ing': True}}
     else:
+        csv_detail.pop('default', None)
         _d = {csv_detail.lower(): ''} if type(csv_detail) is not dict else csv_detail
         out_file = str(list(_d.keys())[0]) + '-' + out_file if len(_d.keys()) > 1 else out_file
-
     if _iters > 1:
         _count = 0
         print('Records will be saved across {0} files.'.format(_iters))
@@ -676,8 +702,9 @@ def get_cmd_requirements(cmd:str, input:list):
         return True
 
 
-def get_dict_sources():
-    return list(md.MedicationDictionary.get_src_list().keys())
+def get_dict_sources(codes_only=False):
+    md_keys = list(md.MedicationDictionary.get_src_list().keys())
+    return md_keys if not codes_only else list(set(md_keys) & set(util.OPTIONS_CUI_TYPES))
 
 
 def get_file_cui_types(_file:str):

@@ -89,6 +89,8 @@ class smoresCLI(cmd.Cmd):
         enough information is provided from command line.
         :param in_args : input arguments from command line, can be empty or have up to 2 values depnding on the process
         :param cmd_call : Process we are attempting to perform
+        :return @valid_1 :
+                @valid_2 :
         """
         valid_1, valid_2 = None, None
 
@@ -102,13 +104,22 @@ class smoresCLI(cmd.Cmd):
             args = []
 
         if cmd_call in ['default']:
+            # Default : Returns a valid cui type for an input cui
+            #   checks to see if there is more than 2 arguments
+            #   if so, arg[0] may be a valid code
+            #        arg[1] may be a valid code type
+            #   if not ask the user what type of code type arg[0] is
+            # valid_1 = valid cui type
+            # valid_2 = None
             while True:
                 if len(args) >= 2 and len(args) <= 3:
                     input_type = args[1].upper()
                 else:
                     input_type = input("What type of id is '{0}'?  [LOCAL/RXCUI/NDC/SNOMED]".format(args[0])).upper()
 
+                # Confirm it's a valid code type
                 valid_type = self.validate_id_type(input_type)
+                # Valid type is a boolean of True
                 if isinstance(valid_type, str) or valid_type is None:
                     return None
                 elif valid_type:
@@ -118,7 +129,8 @@ class smoresCLI(cmd.Cmd):
                     continue
             valid_1 = input_type
 
-        elif cmd_call == 'rxn_ing':
+        elif cmd_call in self.cmd_config_default:
+            # valid_1 : Valid Cui , valid_2 : Valid Cui Type
             valid_2, _ = self.validate_args(args, 'default')
             valid_1 = args[0]
 
@@ -172,7 +184,7 @@ class smoresCLI(cmd.Cmd):
                 print("No Files Loaded!\nYou Must load a file containing local medications first")
             else:
                 _file_opts = list(self.inputs['files'].keys()) + ['All']
-                _dict_opts = list(smores.get_dict_sources()) + ['All']
+                _dict_opts = list(smores.get_dict_sources(True)) #+ ['All']
                 _file_or_dict = None
 
                 if cmd_call in ['csv', 'json']:
@@ -188,10 +200,12 @@ class smoresCLI(cmd.Cmd):
 
                     if _file_or_dict.upper() == 'FILE':
                         valid_1 = 'FILE|' + simple_input("Please choose a loaded file", _file_opts, True)
+
                     elif _file_or_dict.upper() == 'DICTIONARY':
                         valid_1 = 'DICT|' + simple_input("Please choose a code dictionary to output", _dict_opts, True)
                     elif _file_or_dict.upper() == 'EXIT':
                         return None
+
                 else:
                     valid_1 = simple_input("Please choose a loaded file", _file_opts, True)
 
@@ -199,7 +213,7 @@ class smoresCLI(cmd.Cmd):
                     if len(args) == 2 and len(args[1]) > 0:
                         valid_2 = args[1]
                     else:
-                        valid_2 = input("Please provide an output file name:").strip()
+                        valid_2= input("Please provide an output file name:").strip()
 
                     if len(valid_2) > 0:
                         if "." in valid_2:
@@ -209,6 +223,7 @@ class smoresCLI(cmd.Cmd):
                         print('Empty file name provided, using default.')
                 else:
                     valid_2 = args[0]
+
         elif cmd_call == 'file':
             re_use = False
             if self.inputs['loaded'] and len(in_args) == 0:
@@ -306,10 +321,25 @@ class smoresCLI(cmd.Cmd):
             _r = func(client_cmd=cmd_call, med_id=in_id, med_id_type=in_type)
         return _r
 
-    def run_file_call(self, func, cmd_call: str, file: str = None):
-        if file is None:
+    def run_multi_call(self, func, cmd_call: str, file:Union[str, dict]=None, file_ovrd:bool=False, args:list=None):
+        """
+
+        :param func: smores.processes function to be called for the given cmd_call
+        :param cmd_call: the current command call being requested by the client
+        :param file: the target file that the cmd_call should be ran against
+        :param file_ovrd: override the file requirement for this function
+        :param args: parameters to further specify the cmd_call
+        :return:
+        """
+        if file is None and not file_ovrd:
             file_msg = "Run {0} on all loaded files?".format(cmd_call)
             _run = simple_input(file_msg, ['Y', 'N', 'exit'])
+        elif type(file) is dict and file_ovrd:
+            # if the file definition is overiden and we ahve a list, we need to pull out the file
+            _f = file['file']
+            args = file['args']
+            file = _f
+            _run = 'BYPASS'
         else:
             _run = 'Y'
 
@@ -381,7 +411,8 @@ class smoresCLI(cmd.Cmd):
                 smores_error('#Cx004.3')
 
         elif self.inputs['loaded']:
-            count_ran, errors, file = self.run_file_call(run_func, cmd_call)
+            count_ran, errors, file = self.run_multi_call(run_func, cmd_call) if not file_ovrd \
+                else self.run_multi_call(run_func, cmd_call, file=arg, file_ovrd=True)
             if count_ran is not None:
                 self.set_touched(file, cmd_call)
                 print('Command {0} Completed for {1} medications'.format(cmd_call, count_ran))
@@ -563,6 +594,7 @@ Syntax: load [file_name]
         REQUIRES A FILE TO BE LOADED OR A SPECIFIC RXCUI TO BE PROVIDED"""
         cmd_call = 'rxn_ing'
         return self.run_cmd(arg, cmd_call)
+    do_rxn_ing = do_rxn_ingredients
 
     def do_rxn_lookup(self, arg):
         """Look up current RxNorm CUI for any loaded medication by a linked CUI.
@@ -607,30 +639,42 @@ Syntax: load [file_name]
 
     def do_csv(self, arg):
         target, output_file = self.validate_args(arg, 'csv')
+        if target is None:
+            return
         t_type, file = target.split('|')
         if file is not None:
-            params = {}
             csv_constructor = {}
-            if t_type == 'FILE':
+            if t_type == 'FILE' and file is not None:
                 cmd_call = self.client_run_function('csv_FILE')
-                print('Default output is : LOCAL_ID | LOCAL_NAME | SOURCE | CUI | CUI_TYPE')
-                # TODO Add in customization of CSV structure
-                params['default'] = 'Y'
-                # params['default'] = simple_input("Do you want to save the default output data?", ['Y', 'N'])
-                # params['details'] = simple_input("Do you want to save details to medications/codes
-                # (e.g. NDC, ingredients, term type, status)?", ['Y', 'N'])
-                # params['details'] = simple_input(
-                #     "Do you want to save code dictionaries from cache? (e.g. NDC, RXNORM)",
-                #     ['Y', 'N'])
-                if params['default'] == 'Y':
-                    csv_constructor['default'] = ''
+                print('Default format is : LOCAL_ID | LOCAL_NAME | SOURCE | CUI | CUI_TYPE')
+                print('The default mappings output is for RxNorm with ingredients.')
+                default_yn = simple_input("Do you want to save the default output data?", ['Y', 'N'])
+                if default_yn == 'Y':
+                    csv_constructor['default'] = True
+                else:
+                    # {'cui': {'src': 'RXNORM', 'ing': True}}
+                    csv_constructor['default'] = False
+                    _dict_opts = list(smores.get_dict_sources(True)) + ['All']
+                    csv_constructor['cui'] = {'src': simple_input('What codeset do you want to output mappings for?',
+                                                                  _dict_opts)}
+                    if simple_input('Do you want to save ingredient mappings for {0} if available?'.format(
+                            csv_constructor['cui']['src']), ['Y', 'N']) != 'N':
+                            csv_constructor['cui']['ing'] = True if csv_constructor['cui'] == 'Y' else False
+                if csv_constructor['default'] or (not csv_constructor['default'] and csv_constructor['cui']['ing']):
+                    _file_check = self.get_untouched('rxn_ing')
+                    if len(_file_check) > 0:
+                        print(console_colorize('\nWARN: Command RXN_ING has not been ran for all loaded files. \n'
+                                         'Ingredients outputted will only include those loaded from the files themselves.', 'yellow'))
+                        if simple_input('Do you want to continue?', ['Y','N']) == 'N':
+                            return
+
             elif t_type == 'DICT':
                 cmd_call = self.client_run_function('csv_DICT')
-                print('Default output is : CUI | CUI Name | CUI Type | Term Type (If applicable)')
-                params['default'] = 'Y'
-                # TODO Add in customization of CSV structure
-                if params['default'] == 'Y':
-                    csv_constructor['default'] = ''
+                print('Default output is : CUI | CUI Name | CUI Type | CUI Type Specific Details...')
+                default_yn = 'Y'
+                if default_yn == 'Y':
+                    csv_constructor['default'] = True
+                # TODO Should there be customization options for dictionary output?
             cmd_call(file, out_file=output_file, params=csv_constructor)
         else:
             print('Error in preparing CSV')

@@ -12,7 +12,7 @@ smoresLog = logging.getLogger(__name__)
 
 
 def get_FHIR_codesets(sys):
-    return util.FHIR_CODESET_SYSTEMS
+    return util.FHIR_CODESET_SYSTEMS[sys]
 
 def get_RXNORM_tty_dict():
     return util.RXNORM_TTY_SUPPORT_DICT
@@ -72,7 +72,13 @@ def get_rxcui(cui, valid=None, idType=None):
             return RxCUI(cui, valid)
 
 def get_med_obj(cui: Union[list, str], idType:str, valid=None):
-
+    """
+    Generic retrieval function for Medication objects with a specified cui of a specified type
+    :param cui:
+    :param idType:
+    :param valid:
+    :return:
+    """
     smoresLog.debug(cui)
     # Process input list of cuis, recursive call
     if isinstance(cui, list):
@@ -113,13 +119,13 @@ class Medication:
 
     def add_cui(self, cui, src):
         if not isinstance(cui, Medication) and not issubclass(type(cui), Medication):
-            med_obj = Medication(cui)
+            med_obj = get_med_obj(cui, src)
         else:
             med_obj = cui
             cui = med_obj.cui
 
         if not self.has_dict(src):
-            self.add_dict(src)
+            self.add_dict(src, self.sys_id)
 
         self.get_dict(src).add_med_with_id(med_obj, cui)
 
@@ -249,7 +255,7 @@ class Medication:
 
     def get_print_base(self):
         _print = {
-            'id': self.sys_id,
+            'cui': self.sys_id,
             'name': self.get_name(),
             'source': str(type(self))
         }
@@ -353,25 +359,24 @@ class LocalMed(Medication):
         return self.json
 
     def get_cui_by_src(self, c_type, mod=None, inc_obj=False):
-        """Returns a list of RxCUI"""
+        """Returns a list of CUI of type c_type"""
         try:
+            _cuis = {}
             if type(c_type) is list:
-                _cuis = {}
                 for _c in c_type:
                     _cuis[_c] = self.get_dict(_c, mod).get_med_list(modifier=mod, inc_obj=inc_obj)
             else:
-                _cuis = self.get_dict(c_type, mod).get_med_list(modifier=mod, inc_obj=inc_obj)
+                _cuis[c_type] = self.get_dict(c_type, mod).get_med_list(modifier=mod, inc_obj=inc_obj)
         except AttributeError:
-            return {} if inc_obj else []
+            return {}
         else:
             return _cuis
 
     def get_cui_all(self, omit=[], inc_obj=False):
-        src_list = self.get_dict()
-        _cuis = {}
-        for src in src_list:
-            if src not in omit:
-                _cuis[src] = self.get_cui_by_src(c_type=src, inc_obj=inc_obj)
+        src_list = list(set(self.get_dict()) - set(omit))
+        # for src in src_list:
+        #     if src not in omit:
+        _cuis = self.get_cui_by_src(c_type=src_list, inc_obj=inc_obj)
         return _cuis
 
     # Lookup specific term types of RxCUI's for a medication that have already been identified.
@@ -380,42 +385,10 @@ class LocalMed(Medication):
     def get_rxcui_by_tty(self, tty):
         return self.get_dict('RXNORM').get_med_by_property('tty', tty)
 
-    def get_ingredients(self, obj_inc=False):
-
-        if self.has_ingredients:
-            logging.debug('{0} Has Ingredients'.format(self.local_id))
-            dict = self.get_dict('ING')
-
-        elif 'RXNORM' in self.dictionaries.keys() and (self.has_ingredients is None or not self.ing_checked):
-            if not self.has_dict('ING'):
-                self.add_dict('ING', self.sys_id)
-            dict = self.get_dict('ING')
-            rxc_list = self.get_cui_by_src('RXNORM')
-            for cui in rxc_list:
-                _ing_temp = get_rxcui(cui).get_ingredients()
-                if _ing_temp is not None:
-                    self.has_ingredients = True if len(_ing_temp) > 0 else self.has_ingredients
-                    for ing in _ing_temp:
-                        _rxc = get_rxcui(ing)
-                        dict.add_med_with_id(_rxc, _rxc.cui)
-
-            if self.has_ingredients is None:
-                self.has_ingredients = False
-
-        if obj_inc and self.has_ingredients:
-            ing_list = []
-            for ing in dict.get_med_list():
-                ing_list.append(get_rxcui(ing))
-        elif self.has_ingredients:
-            ing_list = dict.get_med_list()
-        else:
-            ing_list = None
-
-        return ing_list
-
-    def get_fhir(self):
+    def get_fhir(self, constructor:dict={'default': True}):
         # TODO ERROR : This is loading everything for the first medication and not just what is associated with it
-        default = self.print_formats('FHIR')
+        fhir_details = {'cui': {'src': 'ALL', 'ing': False}, 'ing': True} if constructor['default'] else constructor.pop('default')
+        default = self.print_formats('FHIR', p_mod=fhir_details)
         FHIR_RESOURCE = {'resource': {'resourceType': 'Medication', 'id': default['id']}}
         # TODO parameterize the local code fhir value system
         codeable_concept = [{'code': self.local_id, 'display': self.get_name(), 'system':'https://unchealthcare.org/epic/medications'}]
@@ -461,7 +434,11 @@ class LocalMed(Medication):
             _print = {}
 
         if p_type == 'ing' or p_type == 'ingredients':
-            _ing_temp = self.get_ingredients(obj_inc=True)
+            _ing_temp = None
+            if 'src' in list(p_mod.keys()):
+                _ing_temp = self.get_ingredients(obj_inc=True, ing_src=p_mod['src'])
+            elif 'omit_src' in list(p_mod.keys()):
+                _ing_temp = self.get_ingredients(obj_inc=True)
             _ing = [item.print_formats(p_base=True) for item in _ing_temp] if _ing_temp is not None else None
             smoresLog.debug(_ing)
             if _ing is not None and p_base:
@@ -472,10 +449,21 @@ class LocalMed(Medication):
         elif p_type == 'cui':
             smoresLog.debug('Getting Cui Format...')
             if p_mod is not None:
+                _omit = p_mod['omit_src'] if 'omit_src' in p_mod.keys() else []
                 if 'src' in list(p_mod.keys()):
-                    _cui = self.get_cui_by_src(p_mod['src'])
-                elif 'omit_src' in list(p_mod.keys()):
-                    _cui = self.get_cui_all(omit=p_mod['omit_src'])
+                    if p_mod['src'] == 'ALL':
+                        _omit = _omit + ['PARENT', 'ING']
+                        _cui = self.get_cui_all(omit=_omit)
+                    else:
+                        _cui = self.get_cui_by_src(p_mod['src'])
+                if p_mod['ing']:
+                    # pull the keys from the sources we pulled above in case the src is ALL
+                    # and we have multiple cui sources
+                    _ing_srcs = _cui.keys()
+                    for _src in _ing_srcs:
+                        _ing_temp = self.get_ingredients(obj_inc=True, ing_src=_src)
+                        if _ing_temp is not None and len(_ing_temp) > 0:
+                            _cui[_src] = _cui[_src] + [item.print_formats(p_base=True)['cui'] for item in _ing_temp]
             else:
                 _cui = self.get_cui_all()
 
@@ -499,20 +487,24 @@ class LocalMed(Medication):
             if isinstance(p_mod, dict):
                 for mod_k, mod_v in p_mod.items():
                     smoresLog.debug('Current p_mod: {0} , {1}'.format(mod_k, mod_v))
-                    _print[mod_k] = self.print_formats(mod_k, p_mod=mod_v, p_base=False)
-                if 'ing' in _print.keys():
-                    if len(_print['ing']) >= 0:
-                        _ing2 = [item['cui'] for item in _print['ing'].copy()]
-                        _print['cui'] = _print['cui'] + _ing2 if _ing2 is not None else _print['cui']
-                    _print.pop('ing')
+                    if mod_v:
+                        _print[mod_k] = self.print_formats(mod_k, p_mod=mod_v, p_base=False)
             _print = flatten_dict(_print)
 
         elif p_type == 'FHIR':
             _print = self.print_formats(p_base=True)
-            _print['cui'] = self.print_formats('cui', p_mod={'omit_src': ['PARENT', 'ING']}, p_base=False)
-            if self.has_ingredients:
-                _ing = self.print_formats(p_type='ing', p_base=False)
-                _print['ing'] = [item['cui'] for item in _ing['ing']] if _ing is not None else None
+            _print['cui'] = self.print_formats('cui', p_mod=p_mod['cui'], p_base=False)
+            if 'ing' in p_mod.keys() and p_mod['ing']:
+                _ing_srcs = _print['cui'].keys()
+                _ings = {}
+                for _src in _ing_srcs:
+                    _ing_temp = self.get_ingredients(obj_inc=True, ing_src=_src)
+                    if _ing_temp is not None and len(_ing_temp) > 0:
+                        try:
+                            _ings[_src] = [item.print_formats(p_mod=p_mod['cui'], p_base=False)['cui'] for item in _ing_temp]
+                        except KeyError:
+                            pass
+                _print['ing'] = _ings
 
         smoresLog.debug('{0} : {1}'.format(p_type, _print))
         return _print
@@ -523,8 +515,8 @@ class NDC(Medication):
     api2 = RXNDC()
     api3 = openFDADevice(api_key=util.get_api_key('FDA'))
 
-    def __init__(self, input_key:str, valid=None):
-        super(NDC, self).__init__(input_key)
+    def __init__(self, input_key:str, source:str='NDC', valid=None):
+        super(NDC, self).__init__(input_key, source)
 
         if valid is None:
             if NDC.api.validate(self.cui):
@@ -598,7 +590,7 @@ class NDC(Medication):
 
     def get_print_base(self):
         _print = {
-            'NDC': self.cui,
+            'cui': self.cui,
             'name': self.get_name(),
             'status': self.get_status(),
             'unii': self.get_linked_cui('FDA')
@@ -617,10 +609,9 @@ class RxCUI(Medication):
     def get_historical_list():
         return RxCUI.rx_hist_avail.copy()
 
-    def __init__(self, input_key:str, valid=None):
-        super(RxCUI, self).__init__(input_key)
+    def __init__(self, input_key:str, source:str='RXNORM', valid=None):
+        super(RxCUI, self).__init__(input_key, source)
 
-        self.has_ingredients = None
         self.has_remaps = None
         self.has_hist = None
         self.dictionaries = {}
