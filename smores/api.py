@@ -145,7 +145,7 @@ class openFDA(SMORESapi):
                     'search': ['product_ndc:', 'PRIMARY']
                 }
             },
-            'CROSSWALK': {
+            'RXN_LOOKUP': {
                 'base': 'ndc.json',
                 'payload': {
                     'search': ['openfda.rxcui:', 'PRIMARY']
@@ -194,14 +194,32 @@ class openFDA(SMORESapi):
         else:
             smores_error(self.get_e('1'), api_url, logger=APIlog)
 
-        rxn_r = RXNDC().get_ndc_rxnorm(ndc)
-        if len(rxn_r) > 0:
-            if _r is None:
-                _r = []
-            for rxc in rxn_r:
-                if rxc not in _r:
-                    _r.append(rxc)
         return _r
+
+    def get_rxnorm_ndc(self, rxcui):
+        """
+        Lookup all corresponding NDC's for a provided RXCUI
+        :param rxcui: Input RXCUI
+        :return: list of NDC codes
+        """
+        success, response, api_url = self.call_api('RXN_LOOKUP', rxcui)
+        _r = None
+        if success and 'error' not in response.keys():
+            results = response['results'][0]
+            ndc_list = self.process_ndc(results)
+            try:
+                _r2 = ndc_list['packaging']
+                _r = []
+                for _ndc in _r2:
+                    __r = _ndc['package_ndc']
+                    _r.append(__r)
+            except KeyError:
+                smores_error(self.get_e('2'), api_url, logger=APIlog)
+                return None
+            else:
+                return _r
+        else:
+            smores_error(self.get_e('1'), api_url, logger=APIlog)
 
     def get_ndc_product(self, ndc):
         success, response, api_url = self.call_api('PRODUCT', ndc)
@@ -213,6 +231,12 @@ class openFDA(SMORESapi):
         return _r
 
     def get_ndc_by_rxcui(self, rxcui):
+        """
+        DEPRECATED
+        Lookup all corresponding NDC's for a provided RXCUI
+        :param rxcui:
+        :return: List of dict of NDC's with NDC base
+        """
         success, response, api_url = self.call_api('CROSSWALK', rxcui)
         if success and 'error' not in response.keys():
             results = response['results']
@@ -228,7 +252,7 @@ class openFDA(SMORESapi):
             _r_keys = ndc_data.keys()
             if len(_r_keys) == 0:
                 return None
-            _r, product_ndc, generic, brand, dose, form, unii = (None for i in range(7))
+            _r, product_ndc, package_ndc, generic, brand, dose, form, unii = (None for i in range(8))
 
             product_ndc = ndc_data['product_ndc'] if 'product_ndc' in _r_keys else False
             generic = ndc_data['generic_name'] if 'generic_name' in _r_keys else False
@@ -238,6 +262,7 @@ class openFDA(SMORESapi):
             form = ndc_data['dosage_form']
             dose = '(' + '|'.join(_d for _d in _dose) + ')' if _dose else ''
             unii = ndc_data['openfda']['unii']
+            package_ndc = ndc_data['packaging'] if 'packaging' in _r_keys else False
             if generic and brand:
                 _base = generic + ' [' + brand + ']'
             elif generic:
@@ -252,7 +277,9 @@ class openFDA(SMORESapi):
                                              '%Y%m%d')
             _d = datetime.today()
             status = 'valid' if _list_expire > _d else 'expired'
-            _r = {'ndc': product_ndc, 'name': full_name, 'status': status}
+            _r = {'ndc': product_ndc, 'name': full_name, 'status': status, 'unii': unii}
+            if package_ndc:
+                _r['packaging'] = package_ndc
         except KeyError:
             _r = None
             smores_error(self.get_e('2'), '', logger=APIlog)
@@ -477,6 +504,10 @@ class RXNDC(SMORESapi):
             'NDC_STATUS': {
                 'base': 'ndcstatus.json',
                 'payload': {'ndc': 'PRIMARY'}
+            },
+            'NDC_LOOKUP': {
+                'base': 'allhistoricalndcs.json',
+                'payload': {'rxcui': 'PRIMARY'}
             }
         }
 
@@ -552,6 +583,30 @@ class RXNDC(SMORESapi):
                             _r.append(_actCui)
                         if len(_origCui) > 0 and _origCui not in _r:
                             _r.append(_origCui)
+            except KeyError or IndexError:
+                smores_error(self.get_e('1'), api_url, logger=APIlog)
+                return False
+            else:
+                return _r
+        else:
+            smores_error(self.get_e('1'), api_url, logger=APIlog)
+            return None
+
+    def get_rxnorm_ndc(self, rxcui):
+        success, response, api_url = self.call_api('NDC_LOOKUP', rxcui)
+        e_class = ''
+        _r, _ndcList = (None for i in range(2))
+        if success and response is not None:
+            APIlog.debug('Good Response from API.')
+            try:
+                json_detail = response['historicalNdcConcept']
+                APIlog.debug(json_detail)
+                _r = json_detail['historicalNdcConcept']['historicalNdcTime']
+                _ndcList = []
+                for set in _r:
+                    for _ndc in set['ndcTime']:
+                        _ndcList = _ndcList + _ndc['ndc']
+                _r = _ndcList
             except KeyError or IndexError:
                 smores_error(self.get_e('1'), api_url, logger=APIlog)
                 return False
@@ -698,6 +753,7 @@ class UMLS(SMORESapi):
         if src.upper() in self.valid_codesets and target_src.upper() in self.valid_codesets:
             success, response, api_url = self.call_api('CROSSWALK', cui, _opts)
             if success and response is not None:
+                json.dump(response, indent=4)
                 try:
                     cui_crosswalk = [{'ui': atomCluster['ui'],
                                       'name': atomCluster['name'],

@@ -4,6 +4,7 @@ class Workflow:
     def __init__(self, client:smoresCLI):
         self.client = client
         self.steps = []
+        self.configure = {}
         self.outputs = []
         self.dependencies = {}
         self.target = {'name': '', 'type': '', 'loaded': False}
@@ -22,6 +23,17 @@ class Workflow:
                 pass
             else:
                 self.steps.append(cmd)
+
+    def configure_step(self, cmd):
+        if cmd not in self.steps:
+            print('That command is not currently part of this workflow.')
+            return
+
+        if cmd not in self.client.cmd_config_default:
+            self.configure['cmd'] = list(self.client.validate_args(None, cmd))
+        else:
+            print('There is nothing to configure for that command.')
+            return
 
     def add_output(self, cmd):
         if cmd in self.valid_steps:
@@ -52,7 +64,7 @@ class Workflow:
             print('File already loaded, skipping load step.')
 
         for cmd in self.steps:
-            self.client.run_file_call(self.client.client_run_function(cmd), cmd, self.target['name'])
+            self.client.run_multi_call(self.client.client_run_function(cmd), cmd, self.target['name'])
 
         for output in self.outputs:
             output_func = self.client.client_run_function(output)

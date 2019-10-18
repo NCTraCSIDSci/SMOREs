@@ -58,6 +58,12 @@ def get_filename(path):
 
 
 def validate_id(id, id_type):
+    """
+    Applies regular expressions where appropriate to confirm that a provided id matches a valid format for a cui type
+    :param id: A input CUI to be checked agaisnt the regex
+    :param id_type: The type of CUI
+    :return: True if matches format or there is no format but valid cui type, False otherwise
+    """
     re_dict = {'NDC': r'(\d{4}\-\d{4}\-\d{2}|\d{5}\-\d{3}\-\d{2})|(\d{5}\-\d{4}\-\d{1,2})|(\d{5}\-\*\d{3}-\d{2}|\d{11})',
                'CPT': r'(\d{4}[A-Z0-9]|[A-Z]{1}\d{4}',
                'RXCUI': None,
@@ -69,8 +75,8 @@ def validate_id(id, id_type):
         if not valid_id_check:
             print('{0} is not a valid format of ID Type {1}'.format(id, id_type))
     else:
-        # TODO Are there valid RegEx patterns for other ID types?
-        valid_id_check = True if len(id) > 0 else False
+        # If there isn't a defined regex but is a supported CUI type then return True
+        valid_id_check = True if len(id) > 0 and id_type in OPTIONS_CUI_TYPES else False
     return valid_id_check
 
 
@@ -100,6 +106,7 @@ def resolve_target_path(target):
     except BaseException as e:
         smores_error('#Cx001.6', supplement=e, console_p=True)
         return False, None
+
 
 def get_util_base(type):
     i = 0

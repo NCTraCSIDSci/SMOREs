@@ -13,6 +13,7 @@ from smores.medkit import MedKit
 from smores.utility.errors import smores_error
 from typing import Union
 import smores.utility.util as util
+from smores.crosswalk import get_crosswalk
 
 smoresLog = logging.getLogger(__name__)
 
@@ -43,9 +44,9 @@ def line_read (medkit, input, last_id=None, skip1=True):
             temp_med = m.LocalMed(input_key=local_id, source=medkit.file_name)
 
         if len(line[i_code_key]) != 0:
-            if util.validate_id(line[i_code_key], line[i_code_type_key].upper()):
-                cui_type = line[i_code_type_key].upper()
-                cui_type = 'RXNORM' if cui_type == 'RXCUI' else cui_type
+            cui_type = line[i_code_type_key].upper()
+            cui_type = 'RXNORM' if cui_type == 'RXCUI' else cui_type # Prevent automatic fail incase RXCUI instead of RXNORM
+            if util.validate_id(line[i_code_key], cui_type):
                 # Support for inclusion of local name for local code id's
                 if cui_type == 'LOCAL' and not temp_med.isNameSet():
                     temp_med.set_name(line[i_code_name])
@@ -105,7 +106,7 @@ def load_file(input_file:str):
             return False, None
         else:
             time.sleep(.01) # Clean exit of tqdm
-            return {'records': c_records, 'dups': c_dup, 'errors': errors}
+            return {'records': c_records, 'dups': c_dup, 'errors': errors, 'file': curr_medkit.file_name}
 
     if ':\\' in input_file:
         input_file_path = Path(input_file).resolve()
@@ -267,21 +268,32 @@ def get_run_call(client_cmd:str='default', opt:str=None):
     else:
         return _cmd
 
-def run_client_cmd(client_cmd:str, med_id:str=None, med_id_type:str=None, file:str=None):
+
+def run_client_cmd(client_cmd:str, med_id:str=None, med_id_type:str=None, file:str=None, args=None):
+    """
+
+    :param client_cmd:
+    :param med_id:
+    :param med_id_type:
+    :param file:
+    :param opts:
+    :return:
+    """
     client_cmds = {'rxn_status': {'func': get_rxn_status, 'display': 'RxNorm Status', 'restrict': None},
                    'rxn_ing': {'func': get_rxn_ingredients, 'display': 'RxNorm Ingredients', 'restrict': None},
-                   'rxn_lookup': {'func': get_rxn_lookup, 'display': 'RxNorm Lookup', 'restrict': None, 'requires': True},
+                   'rxn_lookup': {'func': get_rxn_lookup, 'display': 'RxNorm Lookup', 'restrict': None},
                    'rxn_remap': {'func': get_rxn_remap, 'display': 'Remapped RxNorm', 'restrict': None},
                    'rxn_history': {'func': get_rxn_history,
                                    'display': 'Retired RxNorm History',
-                                   'restrict': m.RxCUI.get_historical_list}
+                                   'restrict': m.RxCUI.get_historical_list},
+                   'code_lookup': {'func': get_code_lookup, 'display': 'Code Lookup', 'restrict': None}
                    # 'rxn_search': get_rxn_search
                    }
     try:
         this_cmd = client_cmds[client_cmd]['func']
         this_display = client_cmds[client_cmd]['display']
         this_restriction = client_cmds[client_cmd]['restrict']
-        this_cmd_requires = client_cmds[client_cmd]['requires'] if 'requires' in  client_cmds[client_cmd].keys() else None
+        this_cmd_requires = client_cmds[client_cmd]['requires'] if 'requires' in client_cmds[client_cmd].keys() else None
     except KeyError:
         smores_error('TBD', client_cmd)
         return
@@ -289,7 +301,7 @@ def run_client_cmd(client_cmd:str, med_id:str=None, med_id_type:str=None, file:s
     if file is not None:
         # If a command has a requirement in order to process without complete failure, check that it has passed
         if this_cmd_requires:
-            pass_requires, error = get_cmd_requirements(client_cmd, file)
+            pass_requires, error = get_cmd_requirements(client_cmd, [file, args])
             if not pass_requires:
                 print('Command {0} does not meet the requirements needed to execute the command'.format(client_cmd))
                 if error is not None:
@@ -302,7 +314,7 @@ def run_client_cmd(client_cmd:str, med_id:str=None, med_id_type:str=None, file:s
             if num_kits > 1:
                 kits_prog = tqdm(total=num_kits, unit='Files')
             for id, kit in medkits.items():
-                _c, _e = process_event(kit, this_cmd, this_display, this_restriction)
+                _c, _e = process_event(kit, this_cmd, this_display, this_restriction, args)
                 success_count += _c
                 if len(_e) > 0:
                     errors = errors + _e if type(_e) is list else errors.append(_e)
@@ -324,8 +336,29 @@ def run_client_cmd(client_cmd:str, med_id:str=None, med_id_type:str=None, file:s
         return 0, [], med_id
 
 
+def get_code_lookup(medObj:Union[m.Medication, m.NDC, m.RxCUI], target:str):
+    """
+    Performs a crosswalk of an input medication's cui to another codeset
+    :param medObj: A Medication object or sub type to be crosswalked
+    :param target: the target codeset to search for mappings to
+    :return: True if results, False if None
+    """
+    source = medObj.get_property('source')
+    crosswalk = get_crosswalk(source, target)
+    cross_r = crosswalk.run_crosswalk(medObj.cui) # hold results from the lookup of target code set
+    if cross_r is not None and len(cross_r) > 0:
+        smoresLog.debug('Crosswalk Results for {0} to {1}'.format(medObj.cui, target))
+        for _res in cross_r:
+            medObj.add_linked_cui(_res, target)
+            smoresLog.debug('{0}.{1}'.format(target, _res))
+        return True, _res
+    else:
+        return False, None
+
+
 def get_rxn_lookup(medObj:Union[m.Medication, m.LocalMed, m.NDC]):
     """
+    DEPRECATED
     Lookup RxCUI for codes from a different source
     :param medObj:
     :return:
@@ -626,8 +659,11 @@ def load_session(session:str, SMOREs_version:str):
         return None
 
 
-def get_cmd_requirements(cmd:str, input):
-    if cmd == 'rxn_lookup':
+def get_cmd_requirements(cmd:str, input:list):
+    _file = input[0]
+    _opts = input[1]
+    if cmd == 'code_lookup':
+
         file_cui_types = get_file_cui_types(input)
         if file_cui_types is not None:
             if any(i in ['NDC'] for i in file_cui_types):

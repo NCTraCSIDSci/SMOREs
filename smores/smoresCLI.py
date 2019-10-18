@@ -1,6 +1,7 @@
 import cmd
 import logging
 import timeit
+from typing import Union
 import smores.processes as smores
 from smores.utility.errors import smores_error
 from smores.utility.util import validate_id, resolve_target_path
@@ -61,7 +62,8 @@ class smoresCLI(cmd.Cmd):
         self.prompt = console_colorize('>', 'yellow')
         self.errors = {}
         self.files = self.inputs['files']
-        self.cmds = ['rxn_ing', 'rxn_status', 'rxn_lookup', 'rxn_remap', 'rxn_history']
+        self.cmds = ['rxn_ing', 'rxn_status', 'rxn_remap', 'rxn_history', 'code_lookup']
+        self.cmd_config_default = ['rxn_ing', 'rxn_status', 'rxn_history', 'rxn_remap']
         self.output_cmds = ['fhir', 'csv']
         self.client_run_function = smores.get_run_call
 
@@ -119,17 +121,37 @@ class smoresCLI(cmd.Cmd):
         elif cmd_call == 'rxn_ing':
             valid_2, _ = self.validate_args(args, 'default')
             valid_1 = args[0]
-        elif cmd_call == 'rxn_status':
-            valid_2, _ = self.validate_args(args, 'default')
-            valid_1 = args[0]
-        elif cmd_call == 'rxn_remap':
-            valid_2, _ = self.validate_args(args, 'default')
-            valid_1 = args[0]
-        elif cmd_call == 'rxn_lookup':
-            valid_2, _ = self.validate_args(args, 'default')  # Validated will provide the valid ID Type
-            valid_1 = args[0] if valid_2 and validate_id(args[0],
-                                                         valid_2) else False
-            # Ensures the input id is a valid id of the specified type
+
+        elif cmd_call == 'code_lookup':
+            # args[0] : Initial CUI, args[1] : Initial CUI Type, args[2] : Target CUI Type
+            # valid_1 : valid cui, valid_2 : list valid source and target
+            _dict_opts = util.OPTIONS_CUI_TYPES.copy()
+            _avail = list(set(smores.get_dict_sources()) & set(_dict_opts))
+            if len(_avail) == 0 and len(args) < 2:
+                print('There are no available starting cui types that can be crosswalked.\n'
+                      'Please load a file containing valid cui types: {0}'.format(_dict_opts))
+                return False, None
+
+            if len(args) >= 2:
+                if len(args) == 3:
+                    # provided cui, cui source, and target
+                    valid_2, _ = self.validate_args(args, 'default')
+                    source, target = args[1].upper(), args[2].upper()
+                else:
+                    source, target = args[0].upper(), args[1].upper()
+                valid_1 = simple_input("Is {0} the correct starting source? ".format(source), ['YES', 'NO', 'exit'])
+                if valid_1 == 'exit':
+                    return False, None
+                # TODO need path for valid_2
+            else:
+                valid_1 = simple_input("Which code set do you want to start with?", _avail)
+                if valid_1 != 'exit':
+                    _dict_opts.remove(valid_1) # Don't lookup what we've already got
+                    valid_2 = simple_input("Which code set do you want to get results for?", _dict_opts)
+                    if valid_2 == 'exit':
+                        return False, None
+                else:
+                    return False, None
 
         elif cmd_call == 'errors':
             _current_err = list(self.errors.keys())
@@ -260,9 +282,15 @@ class smoresCLI(cmd.Cmd):
         return _r
 
     def set_touched(self, file: str, cmd_call: str):
-        if file.upper() == 'ALL':
+        """
+        Tracks what commands have been ran against which file
+        :param file:
+        :param cmd_call:
+        :return:
+        """
+        if file is None or file.upper() == 'ALL' or file in util.OPTIONS_CUI_TYPES:
             for _f, _d in self.inputs['files'].items():
-                _d[cmd_call] = True
+                _d[cmd_call] = {file: True} if file in util.OPTIONS_CUI_TYPES else True
         else:
             print(self.inputs['files'])
             self.inputs['files'][file][cmd_call] = True
@@ -308,10 +336,10 @@ class smoresCLI(cmd.Cmd):
                 _avail.append('exit')
                 file = simple_input("Please choose a file to run, or run all:", _avail)
 
+        if _run.upper() not in ['N', 'EXIT']:
             if file.upper() == 'EXIT':
                 return None
-            else:
-                return func(client_cmd=cmd_call, file=file)
+            return func(client_cmd=cmd_call, file=file, args=args)
 
         elif _run == 'N':
             print("Enter '? " + cmd_call + "' for options in running this command")
@@ -323,9 +351,9 @@ class smoresCLI(cmd.Cmd):
         else:
             print('Invalid Option')
 
-    def run_cmd(self, arg, cmd_call: str):
-        run_func = self.client_run_function()
-        if len(arg) > 0:
+    def run_cmd(self, arg, cmd_call: str, file_ovrd=False):
+        run_func = self.client_run_function() # default is run_client_cmd(client_cmd, med_id, med_id_type, file, )
+        if len(arg) > 0 and not file_ovrd:
             validated_cui, cui_type = self.validate_args(arg, cmd_call)  #
             if validated_cui is not None:
                 id_result = self.run_id_call(run_func, cui_type, validated_cui, cmd_call)
@@ -375,6 +403,9 @@ class smoresCLI(cmd.Cmd):
     def is_output_cmd(self, output_call: str):
         return True if output_call in self.output_cmds else False
 
+    def is_configureable(self, input_call:str):
+        return True if input_call not in self.cmd_config_default and input_call not in self.output_cmds else False
+
     def do_load(self, arg):
         print('Load')
         """Read in a designated file containing information on local medications
@@ -401,7 +432,7 @@ Syntax: load [file_name]
             success, result = smores.load_file(file)
             if success:
                 self.inputs['loaded'] = True
-                self.inputs['files'][file] = {_c: False for _c in self.cmds}
+                self.inputs['files'][result['file']] = {_c: False for _c in self.cmds}
                 self.inputs['count'] += result['records']
                 toc = timeit.default_timer()
                 elapsed = str(round(toc - tic, 2))
@@ -457,6 +488,11 @@ Syntax: load [file_name]
                     else:
                         curr_flow.add_step(cmd_call)
                     cmds.pop(cmds.index(cmd_call))
+
+                    _conf = simple_input('Do you want to configure this command?', ['Y','N'], True) if self.is_configureable(cmd) else None
+                    if _conf == 'Y':
+                        curr_flow.configure_step(cmd_call)
+
                 elif cmd_call == 'DONE':
                     break
                 else:
@@ -555,6 +591,13 @@ Syntax: load [file_name]
         else:
             print("Enter '? fhir' for options in running this command")
             return
+
+    def do_code_lookup(self, arg):
+        """Uses UMLS to map an input code to or from RxNorm, SNOMED, MED-RT. Some available permutations include RxNorm to NDC, or RxNorm to SNOMED CT"""
+        cmd_call = 'code_lookup'
+        _v1, _v2 = self.validate_args(arg, cmd_call)
+        setup = {'file': _v1, 'args': _v2}
+        return self.run_cmd(setup, cmd_call, True)
 
     do_json = do_fhir
     # Simply re-direct 'json' for now

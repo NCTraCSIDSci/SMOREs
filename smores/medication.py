@@ -10,6 +10,7 @@ import smores.utility.util as util
 
 smoresLog = logging.getLogger(__name__)
 
+
 def get_FHIR_codesets(sys):
     return util.FHIR_CODESET_SYSTEMS
 
@@ -85,7 +86,8 @@ def get_med_obj(cui: Union[list, str], idType:str, valid=None):
             return cui_dict.med_list[cui]
         elif idType is not None:
             if idType in CUI_OBJECT_MAP.keys():
-                return CUI_OBJECT_MAP[idType](cui)
+                objType = CUI_OBJECT_MAP[idType]
+                return objType(cui)
             else:
                 return Medication(cui)
 
@@ -98,7 +100,7 @@ class Medication:
     med_id_list = {'GENERIC': {}}
     api = None
 
-    def __init__(self, input_key: str, source:str='SYSTEM'):
+    def __init__(self, input_key: str, source: str='SYSTEM'):
         smoresLog.debug('Adding medication {0} from source {1}'.format(input_key, source))
         self.sys_id = int(next(Medication.id_count))
         self.valid = True
@@ -106,6 +108,8 @@ class Medication:
         self.dictionaries = {}
         self.name = None
         self.medClass = 'SYSTEM'
+        self.source = source
+        self.has_ingredients = None
 
     def add_cui(self, cui, src):
         if not isinstance(cui, Medication) and not issubclass(type(cui), Medication):
@@ -118,6 +122,24 @@ class Medication:
             self.add_dict(src)
 
         self.get_dict(src).add_med_with_id(med_obj, cui)
+
+    def add_linked_cui(self, cui, src):
+        """
+        When adding a new code that should be applied to all other medications that are associated with this medication
+        :param cui: Input CUI
+        :param src: Input CUI Source
+        :return:
+        """
+        self.add_cui(cui, src)
+        _dicts = list(self.dictionaries.keys())
+        _dicts.remove(src)
+        # Check to see if this cui is linked to any other objects
+        if len(_dicts) > 0:
+            # If so, add the new cui to all of the linked objects
+            for link in _dicts:
+                medObjs = self.dictionaries[link].get_med_list(inc_obj=True)
+                for medObj in medObjs.values():
+                    medObj.add_cui(cui, src)
 
     def isNameSet(self):
         return True if self.name is not None and len(self.name) > 0 else False
@@ -186,6 +208,45 @@ class Medication:
             if hasattr(self, det):
                 setattr(self, det, value=val)
 
+    def get_ingredients(self, obj_inc:bool=False, ing_src:str='RXNORM'):
+        """
+        :param obj_inc: Bool to determine if the object for the ingredient should be included or just the CUI
+        :param ing_src: Target source to check for ingredients
+        :return: if obj_inc is True, dict of ingredients with objects, else list of ingredient id's
+        """
+        if self.has_ingredients:
+            logging.debug('{0} Has Ingredients'.format(self.local_id))
+            dict = self.get_dict('ING')
+
+        elif ing_src in self.dictionaries.keys() and (self.has_ingredients is None or not self.ing_checked):
+            if not self.has_dict('ING'):
+                _res = self.get_cui_by_src(ing_src)
+                if _res is not None and len(_res) > 0:
+                    self.add_dict('ING', self.sys_id)
+                    dict = self.get_dict('ING')
+                    cui_list = _res[ing_src]
+                    for cui in cui_list:
+                        _ing_temp = get_med_obj(cui, ing_src).get_ingredients()
+                        if _ing_temp is not None:
+                            self.has_ingredients = True if len(_ing_temp) > 0 else self.has_ingredients
+                            for ing in _ing_temp:
+                                _c = get_med_obj(ing, ing_src)
+                                dict.add_med_with_id(_c, _c.cui)
+
+            if self.has_ingredients is None:
+                self.has_ingredients = False
+
+        if obj_inc and self.has_ingredients:
+            ing_list = []
+            for ing in dict.get_med_list():
+                ing_list.append(get_med_obj(ing, ing_src))
+        elif self.has_ingredients:
+            ing_list = dict.get_med_list()
+        else:
+            ing_list = None
+
+        return ing_list
+
     def get_print_base(self):
         _print = {
             'id': self.sys_id,
@@ -207,8 +268,7 @@ class LocalMed(Medication):
     api = None
 
     def __init__(self, input_key=None, source=None, parent_dict=None, is_generic=False):
-        super(LocalMed, self).__init__(input_key)
-        self.source = source
+        super(LocalMed, self).__init__(input_key, source)
         self.id_links = {}
         self.parent_med_dict = md.get_med_dict_by_src(self.source) if parent_dict is None else parent_dict
         self.local_id = input_key if input_key is not None else self.sys_id
@@ -267,6 +327,7 @@ class LocalMed(Medication):
             self.add_dict(cui_type, self.sys_id)
         cui_dict = self.get_dict(src=cui_type)
         cui_dict.add_med_with_id(med_obj, med_obj.cui)
+        med_obj.add_cui(self, 'LOCAL')
         invalid_cui += 1 if not med_obj.valid else 0
 
         return invalid_cui
@@ -563,6 +624,7 @@ class RxCUI(Medication):
         self.has_remaps = None
         self.has_hist = None
         self.dictionaries = {}
+        self.source = 'RXNORM'
 
         if valid is None:
             self.valid, self.status, self.tty, self.name = (None for i in range(4))
@@ -716,7 +778,8 @@ class RxCUI(Medication):
             # 'act_cui': self.get_active_cui(),
             'tty': self.get_tty(),
             'name': self.get_name(),
-            'status': self.get_status()
+            'status': self.get_status(),
+            'source': self.source,
         }
         return _print
 
