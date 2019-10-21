@@ -108,24 +108,34 @@ else:
         try:
 
             test_id = 1
-            from smores.utility.util import isUmlsApiValid
-            if not isUmlsApiValid:
+            from smores.utility.util import isUmlsApiValid, get_api_key
+
+            isValid = isUmlsApiValid()
+            if not isValid:
                 logging.info('UMLS API Check {0} Failed - No Authentication Available'.format(test_id))
+                install_tests['umls'] = False
             else:
+
                 logging.info('UMLS API Check {0} Successful'.format(test_id))
                 test_id += 1
 
-            from smores.medication import UMLSCUI
-            umls = UMLSCUI.api
-            for cui_source, test_cui in cui_tests['UMLS'].items():
-                success, results = umls.get_cui_status(test_cui, cui_source)
-                if success:
-                    logging.info(results)
-                    logging.info('UMLS API Test {0} Successful'.format(test_id))
-                    test_id += 1
-                else:
-                    logging.critical('UMLS API Test Test {0} Failed'.format(test_id))
-                    install_tests['umls'] = False
+            if isValid:
+                from smores.api import UMLS
+                api_conf = get_api_key('UMLS')
+                if isValid == 'API_KEY':
+                    api = UMLS(apikey=api_conf['UMLS_API_KEY'])
+                elif isValid == 'USER_PASS':
+                    api = UMLS(authuser=api_conf['UMLS_USER'], authpwd=api_conf['UMLS_PASSWORD'])
+
+                for cui_source, test_cui in cui_tests['UMLS'].items():
+                    success, results = api.get_cui_status(test_cui, cui_source)
+                    if success:
+                        logging.info(results)
+                        logging.info('UMLS API Test {0} Successful'.format(test_id))
+                        test_id += 1
+                    else:
+                        logging.critical('UMLS API Test Test {0} Failed'.format(test_id))
+                        install_tests['umls'] = False
             install_tests['umls'] = True if install_tests['umls'] is None else install_tests['umls']
         except ValueError:
             logging.critical('UMLS API Test Failed to Initialize')

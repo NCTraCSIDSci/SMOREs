@@ -783,7 +783,7 @@ class RxCUI(Medication):
 
 
 class UMLSCUI(Medication):
-    is_valid = util.is_umls_api_valid()
+    is_valid = util.isUmlsApiValid()
     api_conf = util.get_api_key('UMLS')
 
     if is_valid == 'API_KEY':

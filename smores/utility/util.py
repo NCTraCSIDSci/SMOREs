@@ -152,7 +152,7 @@ def isUmlsApiValid():
             raise ValueError
     except ValueError:
         try:
-            if api_conf['UMLS_API_KEY'] != 'NONE' and api_conf['UMLS_API_KEY'] != 'NONE':
+            if api_conf['UMLS_USER'] != 'NONE' and api_conf['UMLS_PASSWORD'] != 'NONE':
                 return 'USER_PASS'
             else:
                 return False
