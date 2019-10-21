@@ -5,7 +5,7 @@ import sys, os
 import re
 from smores.utility.errors import smores_error
 
-OPTIONS_CUI_TYPES = ['RXNORM', 'NDC', 'SNOMED', 'CPT', 'UMLS', 'FDA']
+OPTIONS_CUI_TYPES = ['RXNORM', 'NDC', 'SNOMEDCT_US', 'CPT', 'UMLS', 'FDA', 'HCPCS']
 
 RXNORM_TTY_SUPPORT_DICT = {'SBD': {'name': 'Semantic Branded Drug'},
     'SCD': {'name': 'Semantic Clinical Drug'},
@@ -68,7 +68,7 @@ def validate_id(id, id_type):
                'CPT': r'(\d{4}[A-Z0-9]|[A-Z]{1}\d{4}',
                'RXCUI': None,
                'RXNORM': None,
-               'SNOMED': None,
+               'SNOMEDCT_US': None,
                'LOCAL': None}
     if re_dict[id_type] is not None:
         valid_id_check = True if re.match(re_dict[id_type], id) is not None else False
@@ -141,15 +141,44 @@ def get_version():
     return smoresCLI.client_version
 
 
+def isUmlsApiValid():
+    api_conf = get_api_key('UMLS')
+    try:
+        if type(api_conf) is str and api_conf == 'NONE':
+            raise KeyError
+        elif api_conf['UMLS_API_KEY'] != 'NONE':
+            return 'API_KEY'
+        else:
+            raise ValueError
+    except ValueError:
+        try:
+            if api_conf['UMLS_API_KEY'] != 'NONE' and api_conf['UMLS_API_KEY'] != 'NONE':
+                return 'USER_PASS'
+            else:
+                return False
+        except KeyError:
+            return False
+    except KeyError:
+        smores_error('TBC')
+        return False
+
+
 def get_api_key(API:str):
     config_keys = {
         'FDA': 'FDA_API_KEY',
-        'UMLS': 'UMLS_API_KEY'
+        'UMLS': ['UMLS_API_KEY', 'UMLS_USER', 'UMLS_PASSWORD']
     }
 
     conf = read_config_value('API_KEY')
-    key = conf[config_keys[API].lower()]
-    validated_key = key if key.upper() != 'NONE' and len(key) > 1 else 'NONE'
+    if type(config_keys[API]) is list:
+        key = {}
+        for conf_key in config_keys[API]:
+            _val = conf[conf_key.lower()]
+            key[conf_key] = _val if _val != 'NONE' and len(_val) > 1 else 'NONE'
+        validated_key = key if len(key) > 1 else 'NONE'
+    else:
+        key = conf[config_keys[API].lower()]
+        validated_key = key if key.upper() != 'NONE' and len(key) > 1 else 'NONE'
     return validated_key
 
 
@@ -176,6 +205,7 @@ def read_config_value(setting):
     except PermissionError:
         smores_error('#Cx001.2', console_p=True, supplement='config.ini')
         return None
+
 
 def harmonize_cui_status(in_status):
     return

@@ -58,6 +58,10 @@ class smoresCLI(cmd.Cmd):
             + ' \n ' + 'Development of this tool is supported by ' + self.__grant__ \
             + ' \n\n ' + 'Type ' + console_colorize('help', 'red') + ' or ' \
             + console_colorize('?', 'red') + ' to list commands.\n '
+
+        if not util.isUmlsApiValid():
+            self.intro = self.intro + console_colorize('\nWARN: No UMLS API Key or User/Pass Provided. '
+                                                       'UMLS Functionality will not be accessible without a valid UMLS User/Pass or API Key', 'yellow')
         self.inputs = {'loaded': False, 'files': {}, 'count': 0}
         self.prompt = console_colorize('>', 'yellow')
         self.errors = {}
@@ -204,7 +208,7 @@ class smoresCLI(cmd.Cmd):
                     elif _file_or_dict.upper() == 'DICTIONARY':
                         valid_1 = 'DICT|' + simple_input("Please choose a code dictionary to output", _dict_opts, True)
                     elif _file_or_dict.upper() == 'EXIT':
-                        return None
+                        return None, None
 
                 else:
                     valid_1 = simple_input("Please choose a loaded file", _file_opts, True)
@@ -657,9 +661,9 @@ Syntax: load [file_name]
                     _dict_opts = list(smores.get_dict_sources(True)) + ['All']
                     csv_constructor['cui'] = {'src': simple_input('What codeset do you want to output mappings for?',
                                                                   _dict_opts)}
-                    if simple_input('Do you want to save ingredient mappings for {0} if available?'.format(
-                            csv_constructor['cui']['src']), ['Y', 'N']) != 'N':
-                            csv_constructor['cui']['ing'] = True if csv_constructor['cui'] == 'Y' else False
+                    ing_yn = simple_input('Do you want to save ingredient mappings for {0} if available?'.format(
+                            csv_constructor['cui']['src']), ['Y', 'N'])
+                    csv_constructor['cui']['ing'] = True if csv_constructor['cui'] == 'Y' and ing_yn == 'Y' else False
                 if csv_constructor['default'] or (not csv_constructor['default'] and csv_constructor['cui']['ing']):
                     _file_check = self.get_untouched('rxn_ing')
                     if len(_file_check) > 0:

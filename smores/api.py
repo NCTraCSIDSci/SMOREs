@@ -32,7 +32,7 @@ class SMORESapi:
         self.cache = None
         self.endpoints = {}
         self.e_subclass = SMORESapi.e_subclass
-        self.def_wait = 100  # in milliseconds
+        self.def_wait = 100 #in milliseconds
         self.last_call = None
 
     def get_endpoint(self, api_call):
@@ -117,7 +117,7 @@ class SMORESapi:
 
 
 class openFDA(SMORESapi):
-    # TODO Need to Add Function to Check if Device NDC
+    #TODO Need to Add Function to Check if Device NDC
     requests_cache.install_cache(str(SMORESapi.cache_base.joinpath('openfda_cache').absolute()),
                                  backend='sqlite',
                                  expire_after=SMORESapi.expire_after)
@@ -704,11 +704,17 @@ class UMLS(SMORESapi):
                 umls_cui = [atomCluster['ui'] for atomCluster in response['result']['results']]
             except KeyError or IndexError:
                 smores_error(self.get_e('1'), api_url, logger=APIlog)
-                return False, None
+                return False
             else:
-                return True, umls_cui
+                return umls_cui
 
     def get_cui_base(self, cui, src:str='CUI'):
+        """
+
+        :param cui:
+        :param src:
+        :return: {status , name, }
+        """
         if src.upper() in self.valid_codesets or src == 'CUI':
             if src != 'CUI':
                 src = 'source/'+src
@@ -717,6 +723,8 @@ class UMLS(SMORESapi):
             if success and response is not None:
                 try:
                     cui_base = {}
+                    cui_base['cui'] = response['result']['ui']
+                    cui_base['source'] = response['result']['rootSource']
                     cui_base['status'] = 'ACTIVE' if not response['result']['obsolete'] else 'OBSOLETE'
                     cui_base['name'] = response['result']['name']
                 except KeyError or IndexError:
@@ -748,24 +756,32 @@ class UMLS(SMORESapi):
             smores_error(self.get_e('4'), self.api_url, logger=APIlog)
             return False, None
 
-    def get_crosswalk_cui(self, cui, src, target_src):
+    def get_crosswalk_cui(self, cui, src=None, target_src=None):
+        if type(cui) is dict:
+            src = cui['src']
+            target_src = cui['target_src']
+            cui = cui['input']
+
         _opts = {'ticket': self.get_st(), 'SRC': src, 'targetSource': target_src}
         if src.upper() in self.valid_codesets and target_src.upper() in self.valid_codesets:
             success, response, api_url = self.call_api('CROSSWALK', cui, _opts)
             if success and response is not None:
-                json.dump(response, indent=4)
+                # json.dump(response, indent=4)
                 try:
-                    cui_crosswalk = [{'ui': atomCluster['ui'],
+                    cui_crosswalk = [{'cui': atomCluster['ui'],
                                       'name': atomCluster['name'],
                                       'status': 'ACTIVE' if not atomCluster['obsolete'] else 'OBSOLETE',
-                                      'cui': self.get_umls_cui(atomCluster['ui'], atomCluster['rootSource'], 'exact'),
+                                      'ucui': self.get_umls_cui(atomCluster['ui'], atomCluster['rootSource'], 'exact'),
                                       } for atomCluster in response['result']]
-                    _r = True
                 except KeyError or IndexError:
                     smores_error(self.get_e('1'), api_url, logger=APIlog)
-                    return False, None
+                    return False
                 else:
-                    return _r, cui_crosswalk
+                    return cui_crosswalk
+            else:
+                return False
+        else:
+            return False
 
     def validate(self, cui, src:str='CUI'):
         response, status = self.get_cui_status(cui, src)

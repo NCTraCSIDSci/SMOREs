@@ -351,7 +351,7 @@ def get_code_lookup(medObj:Union[m.Medication, m.NDC, m.RxCUI], target:str):
     source = medObj.get_property('source')
     crosswalk = get_crosswalk(source, target)
     cross_r = crosswalk.run_crosswalk(medObj.cui) # hold results from the lookup of target code set
-    if cross_r is not None and len(cross_r) > 0:
+    if cross_r:
         smoresLog.debug('Crosswalk Results for {0} to {1}'.format(medObj.cui, target))
         for _res in cross_r:
             medObj.add_linked_cui(_res, target)

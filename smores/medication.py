@@ -3,7 +3,7 @@ import itertools
 import logging
 # SMOREs Internal Imports
 import smores.medicationdictionary as md
-from smores.api import openFDA, RXNAV, RXNDC, openFDADevice
+from smores.api import openFDA, RXNAV, RXNDC, openFDADevice, UMLS
 from smores.utility.errors import smores_error
 from typing import Union
 import smores.utility.util as util
@@ -93,7 +93,7 @@ def get_med_obj(cui: Union[list, str], idType:str, valid=None):
         elif idType is not None:
             if idType in CUI_OBJECT_MAP.keys():
                 objType = CUI_OBJECT_MAP[idType]
-                return objType(cui)
+                return objType(cui, source=idType)
             else:
                 return Medication(cui)
 
@@ -119,7 +119,8 @@ class Medication:
 
     def add_cui(self, cui, src):
         if not isinstance(cui, Medication) and not issubclass(type(cui), Medication):
-            med_obj = get_med_obj(cui, src)
+            med_obj = get_med_obj(cui['cui'], src) if type(cui) is dict else get_med_obj(cui, src)
+            cui = med_obj.cui
         else:
             med_obj = cui
             cui = med_obj.cui
@@ -136,7 +137,12 @@ class Medication:
         :param src: Input CUI Source
         :return:
         """
-        self.add_cui(cui, src)
+        if not isinstance(cui, Medication) and not issubclass(type(cui), Medication):
+            cui = cui['cui'] if type(cui) is dict else cui
+            currObj = get_med_obj(cui, src)
+        else:
+            currObj = cui
+        self.add_cui(currObj, src)
         _dicts = list(self.dictionaries.keys())
         _dicts.remove(src)
         # Check to see if this cui is linked to any other objects
@@ -145,7 +151,7 @@ class Medication:
             for link in _dicts:
                 medObjs = self.dictionaries[link].get_med_list(inc_obj=True)
                 for medObj in medObjs.values():
-                    medObj.add_cui(cui, src)
+                    medObj.add_cui(currObj, src)
 
     def isNameSet(self):
         return True if self.name is not None and len(self.name) > 0 else False
@@ -315,14 +321,14 @@ class LocalMed(Medication):
             for cui, obj in in_cui.items():
                 invalid_cui += self.add_cui(obj, cui_type)
             return invalid_cui
-        elif isinstance(in_cui, RxCUI) or isinstance(in_cui, NDC):
+        elif isinstance(in_cui, Medication) or issubclass(type(in_cui), Medication):
             smoresLog.debug(type(cui_type))
             med_obj = in_cui
             if isinstance(in_cui, RxCUI) and in_cui.check_ingredient():
                 cui_type = 'ING'
                 self.has_ingredients = True
             else:
-                cui_type = str(type(in_cui)) if cui_type is None else cui_type
+                cui_type = in_cui.source if cui_type is None else cui_type
         elif type(in_cui) is str and cui_type in util.OPTIONS_CUI_TYPES:
             med_obj = get_med_obj(in_cui, cui_type)
         else:
@@ -403,7 +409,7 @@ class LocalMed(Medication):
                 codeable_concept = codeable_concept + _cuiSet
             FHIR_RESOURCE['resource']['code'] = {'coding': codeable_concept}
 
-        if 'ing' in default.keys():
+        if 'ing' in default.keys() and len(default['ing']) > 0:
             codeable_concept = []
             if type(default['ing']) is dict:
                 for cuiSrc, cuiList in default['ing'].items():
@@ -467,7 +473,7 @@ class LocalMed(Medication):
             else:
                 _cui = self.get_cui_all()
 
-            if _cui is not None:
+            if _cui is not None and len(_cui) > 0:
                 _print = _cui
 
         elif p_type == 'complete':
@@ -489,7 +495,9 @@ class LocalMed(Medication):
                     smoresLog.debug('Current p_mod: {0} , {1}'.format(mod_k, mod_v))
                     if mod_v:
                         _print[mod_k] = self.print_formats(mod_k, p_mod=mod_v, p_base=False)
-            _print = flatten_dict(_print)
+            _p_count = len(_print)
+            _flatten = flatten_dict(_print)
+            _print = _flatten if len(_flatten) == _p_count else {} # Don't print lines that don't have any cui for the desired codeset
 
         elif p_type == 'FHIR':
             _print = self.print_formats(p_base=True)
@@ -505,7 +513,6 @@ class LocalMed(Medication):
                         except KeyError:
                             pass
                 _print['ing'] = _ings
-
         smoresLog.debug('{0} : {1}'.format(p_type, _print))
         return _print
 
@@ -774,42 +781,49 @@ class RxCUI(Medication):
         }
         return _print
 
-    # def print_formats(self, p_type=None, p_mod=None, p_base=True):
-    #     smoresLog.debug('Getting print format..')
-    #     if p_type == 'simple' or p_type is None or p_base:
-    #         _print = self.get_print_base()
-    #     else:
-    #         _print = {}
-    #
-    #     if p_type == 'ing':
-    #         _ing_temp = self.get_ingredients()
-    #         _ing = [item.print_formats(p_base=True) for item in _ing_temp] if _ing_temp is not None else None
-    #         smoresLog.debug(_ing)
-    #
-    #         if _ing is not None:
-    #             _print['ingredients'] = _ing
-    #             if 'id' in _print['ingredients'].keys():
-    #                 _print['ingredients']['cui_ing'] = _print['ingredients']['cui']
-    #                 _print['ingredients'].pop('cui', None)
-    #
-    #     elif p_type == 'complete':
-    #         _print = self.print_formats()
-    #         _ing = self.print_formats('ing')
-    #
-    #     elif p_type == 'cui':
-    #         _print = self.cui
-    #
-    #     elif p_type == 'CSV':
-    #         from smores.medkit import flatten_dict
-    #         smoresLog.debug('p_mods : {0}'.format(p_mod))
-    #         _print = self.print_formats(p_base=True)
-    #         smoresLog.debug(_print)
-    #         for mod_k, mod_v in p_mod.items():
-    #             smoresLog.debug('Current p_mod: {0} , {1}'.format(mod_k, mod_v))
-    #             _print[mod_k] = self.print_formats(mod_k, p_mod=mod_v, p_base=False)
-    #         smoresLog.debug(_print)
-    #         _print = flatten_dict(_print)
-    #
-    #     return _print
 
+class UMLSCUI(Medication):
+    is_valid = util.is_umls_api_valid()
+    api_conf = util.get_api_key('UMLS')
+
+    if is_valid == 'API_KEY':
+        api = UMLS(apikey=api_conf['UMLS_API_KEY'])
+    elif is_valid == 'USER_PASS':
+        api = UMLS(authuser=api_conf['UMLS_USER'], authpwd=api_conf['UMLS_PASS'])
+    else:
+        api = None
+
+    def __init__(self, input_key: str, source: str = 'UMLS', valid=None):
+        super(UMLSCUI, self).__init__(input_key, source)
+        if valid is None:
+            self.valid, cui_base = UMLSCUI.api.get_cui_base(input_key, source)
+            self.status, self.cui, self.name, self.source = (None for i in range(4))
+            if self.valid:
+                self.status = cui_base['status']
+                self.cui = cui_base['cui']
+                self.name = cui_base['name']
+                self.source = cui_base['source']
+
+                if 'ucui' in cui_base.keys():
+                    self.ucui = cui_base['ucui']
+
+            self.api = UMLSCUI.api
+            self.parent_med_dict = md.get_med_dict_by_src(self.source)
+            self.parent_med_dict.add_med_with_id(self, self.cui)
+
+            self.fhir_valid = True if self.valid else False
+
+    def get_print_base(self):
+        _print = {
+            'cui': self.cui,
+            'name': self.name,
+            'source': self.source
+        }
+        return _print
+
+# Set the specific Medication Class Mapping for various cases
 CUI_OBJECT_MAP = {'NDC': NDC, 'RXNORM': RxCUI, 'GENERIC': Medication, 'LOCAL': LocalMed}
+is_umls_valid = util.isUmlsApiValid()
+for uml_src in util.UMLS_VALID_SRCS:
+    if uml_src not in CUI_OBJECT_MAP.keys():
+        CUI_OBJECT_MAP[uml_src] = UMLSCUI if is_umls_valid else Medication

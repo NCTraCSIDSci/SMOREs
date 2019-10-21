@@ -8,7 +8,7 @@ import time
 # SMOREs Internal Imports
 import os
 
-cui_tests = {'RXNORM': ['161'], 'NDC': ['0004-0038-22'], 'SNOMED': []}
+cui_tests = {'RXNORM': ['161'], 'NDC': ['0004-0038-22'], 'UMLS': {'SNOMEDCT_US': '370152009', 'SNOMEDCT_US': '387207008'}}
 
 _c, _ = os.path.split(os.path.dirname(os.path.abspath(__file__)))
 _c1, _ = os.path.split(_c)
@@ -19,7 +19,7 @@ _p = sys.path
 
 reqs = subprocess.check_output([sys.executable, '-m', 'pip', 'freeze'])
 installed_packages = [r.decode().split('==')[0] for r in reqs.split()]
-controlled_failure = 'muhnamena [Should Not Be Found]'
+controlled_failure = 'muhnamena [Expected Failure - Should Not Be Found]'
 required_packages = ['PyYAML','tqdm','requests','requests-cache','python-dateutil','pandas','numpy', controlled_failure]
 
 error_log_path = os.path.join(_c, 'logs', 'install.log')
@@ -105,6 +105,30 @@ else:
         except ValueError:
             logging.critical('RXNav NDC Test Failed to Initialize')
 
+        try:
+
+            test_id = 1
+            from smores.utility.util import isUmlsApiValid
+            if not isUmlsApiValid:
+                logging.info('UMLS API Check {0} Failed - No Authentication Available'.format(test_id))
+            else:
+                logging.info('UMLS API Check {0} Successful'.format(test_id))
+                test_id += 1
+
+            from smores.medication import UMLSCUI
+            umls = UMLSCUI.api
+            for cui_source, test_cui in cui_tests['UMLS'].items():
+                success, results = umls.get_cui_status(test_cui, cui_source)
+                if success:
+                    logging.info(results)
+                    logging.info('UMLS API Test {0} Successful'.format(test_id))
+                    test_id += 1
+                else:
+                    logging.critical('UMLS API Test Test {0} Failed'.format(test_id))
+                    install_tests['umls'] = False
+            install_tests['umls'] = True if install_tests['umls'] is None else install_tests['umls']
+        except ValueError:
+            logging.critical('UMLS API Test Failed to Initialize')
 
 print('\n----------\nInstallation Test Results\n----------\n')
 for key in install_tests.keys():

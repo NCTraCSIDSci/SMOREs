@@ -1,4 +1,5 @@
 import smores.api as api
+import smores.medication as med
 import smores.utility.util as util
 
 def get_crosswalk(source, target):
@@ -15,12 +16,18 @@ class CUICrosswalk:
         self.end = target_type
         self.workflow = []
         CUICrosswalk.add_crosswalk(self)
+        self.config = None
 
     @staticmethod
     def add_crosswalk(cross):
         if cross.start not in CUICrosswalk.CROSSWALKS.keys():
             CUICrosswalk.CROSSWALKS[cross.start] = {}
         CUICrosswalk.CROSSWALKS[cross.start][cross.end] = cross
+
+    def add_config(self, param, val):
+        if self.config is None:
+            self.config = {}
+        self.config[param] = val
 
     def set_workflow(self, work:list):
         self.workflow = work
@@ -42,7 +49,13 @@ class CUICrosswalk:
         :param input: code input for crosswalk
         :return:
         """
-        _proc_data = input
+
+        if self.config is not None:
+            _proc_data = self.config
+            _proc_data['input'] = input
+        else:
+            _proc_data = input
+
         for _proc in self.workflow:
             _func = _proc['func']
             _proc_data = self.run_workflow_process(_func, _proc_data if _proc_data is not None else input)
@@ -68,17 +81,25 @@ class CUICrosswalk:
 # Create NDC to RxNorm Crosswalk
 NDC_RXN = CUICrosswalk('NDC','RXNORM')
 NDC_RXN1 = CUICrosswalk('NDC1','RXNORM1')
-NDC_RXN1.add_step(api.openFDA().get_ndc_rxnorm)
+NDC_RXN1.add_step(med.NDC.api.get_ndc_rxnorm)
 NDC_RXN2 = CUICrosswalk('NDC2','RXNORM2')
-NDC_RXN2.add_step(api.RXNDC().get_ndc_rxnorm)
+NDC_RXN2.add_step(med.NDC.api2.get_ndc_rxnorm)
 NDC_RXN.add_step(NDC_RXN1, None)
 NDC_RXN.add_step(NDC_RXN2)
 
 # Create RxNorm to NDC Crosswalk
 RXN_NDC = CUICrosswalk('RXNORM', 'NDC')
 RXN_NDC1 = CUICrosswalk('RXN1', 'NDC1')
-RXN_NDC1.add_step(api.openFDA().get_rxnorm_ndc)
+RXN_NDC1.add_step(med.NDC.api.get_rxnorm_ndc)
 RXN_NDC2 = CUICrosswalk('RXN2', 'NDC2')
-RXN_NDC2.add_step(api.RXNDC().get_rxnorm_ndc)
+RXN_NDC2.add_step(med.NDC.api2.get_rxnorm_ndc)
 RXN_NDC.add_step(RXN_NDC1, None)
 RXN_NDC.add_step(RXN_NDC2)
+
+# Create RxNorm to SNOMED Crosswalk
+RXN_SNOMED = CUICrosswalk('RXNORM', 'SNOMEDCT_US')
+RXN_SNOMED.add_step(med.UMLSCUI.api.get_crosswalk_cui)
+RXN_SNOMED.add_config('src', 'RXNORM')
+RXN_SNOMED.add_config('target_src', 'SNOMEDCT_US')
+
+
