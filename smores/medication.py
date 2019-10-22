@@ -789,7 +789,7 @@ class UMLSCUI(Medication):
     if is_valid == 'API_KEY':
         api = UMLS(apikey=api_conf['UMLS_API_KEY'])
     elif is_valid == 'USER_PASS':
-        api = UMLS(authuser=api_conf['UMLS_USER'], authpwd=api_conf['UMLS_PASS'])
+        api = UMLS(authuser=api_conf['UMLS_USER'], authpwd=api_conf['UMLS_PASSWORD'])
     else:
         api = None
 

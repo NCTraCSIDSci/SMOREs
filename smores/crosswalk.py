@@ -96,10 +96,12 @@ RXN_NDC2.add_step(med.NDC.api2.get_rxnorm_ndc)
 RXN_NDC.add_step(RXN_NDC1, None)
 RXN_NDC.add_step(RXN_NDC2)
 
-# Create RxNorm to SNOMED Crosswalk
-RXN_SNOMED = CUICrosswalk('RXNORM', 'SNOMEDCT_US')
-RXN_SNOMED.add_step(med.UMLSCUI.api.get_crosswalk_cui)
-RXN_SNOMED.add_config('src', 'RXNORM')
-RXN_SNOMED.add_config('target_src', 'SNOMEDCT_US')
+# If the UMLS API setup is not valid, we don't want to create invalid crosswalk options
+if util.isUmlsApiValid():
+    # Create RxNorm to SNOMED Crosswalk
+    RXN_SNOMED = CUICrosswalk('RXNORM', 'SNOMEDCT_US')
+    RXN_SNOMED.add_step(med.UMLSCUI.api.get_crosswalk_cui)
+    RXN_SNOMED.add_config('src', 'RXNORM')
+    RXN_SNOMED.add_config('target_src', 'SNOMEDCT_US')
 
 
